@@ -6,9 +6,22 @@ unless the user explicitly requests it.
 
 ## Release flow (tags + GitHub Actions)
 
-Releases are driven by annotated tags like `v0.1.0`. The CI workflow
+Releases are driven by tags like `v0.1.0`. The CI workflow
 `build-apk.yml` stamps the manifest version, builds a signed release APK,
 and publishes a GitHub Release with the APK attached.
+
+### Safety guards (automated)
+
+- **versionCode regression check** — `set-version.sh` compares the computed
+  versionCode against the previous tag's manifest and **fails the build** if
+  it hasn't increased. This prevents releasing a tag with a stale or duplicate
+  versionCode.
+- **Tag moves to version-bumped commit** — After CI commits the version bump
+  to `main`, it force-pushes the tag to that commit. This ensures
+  `raw.githubusercontent.com/.../v0.9.4/AndroidManifest.xml` serves the
+  correct version (not the pre-bump snapshot). Without this, downstream
+  consumers (e.g. `bpmct/nooks`) that read the manifest from the tag ref
+  would see stale version info.
 
 ### Versioning nuance (when to bump major/minor/patch)
 

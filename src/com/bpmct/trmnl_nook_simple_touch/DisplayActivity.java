@@ -1054,7 +1054,27 @@ public class DisplayActivity extends Activity {
     }
     
     private void writeGiftModeScreensaver(String code, String fromName, String toName) {
-        // Use gift screensaver image (already in native portrait orientation 600x800)
+        // Both custom and fallback paths ultimately write to display.png
+        // (via writeScreenshotToScreensaver) — this is always the final
+        // screensaver location the NOOK reads from when the device sleeps.
+        // Check for custom gift screensaver image path first
+        String customPath = ApiPrefs.getCustomGiftScreensaverPath(this);
+        if (customPath != null && customPath.length() > 0) {
+            java.io.File customFile = new java.io.File(customPath);
+            if (customFile.exists()) {
+                Bitmap custom = BitmapFactory.decodeFile(customPath);
+                if (custom != null) {
+                    logD("Using custom gift screensaver: " + customPath);
+                    writeScreenshotToScreensaver(custom);
+                    return;
+                } else {
+                    logW("Could not decode custom gift screensaver: " + customPath);
+                }
+            } else {
+                logW("Custom gift screensaver not found: " + customPath);
+            }
+        }
+        // Fallback: use bundled gift screensaver image (native portrait 600x800)
         Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.gift_screensaver);
         if (bitmap != null) {
             writeScreenshotToScreensaver(bitmap);

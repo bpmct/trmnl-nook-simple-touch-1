@@ -21,6 +21,7 @@ public class GiftModeSettingsActivity extends Activity {
     private EditText fromNameField;
     private EditText toNameField;
     private CheckBox webSetupCheckbox;
+    private EditText customScreensaverField;
 
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -106,6 +107,21 @@ public class GiftModeSettingsActivity extends Activity {
         webHintParams.topMargin = 4;
         inner.addView(webSetupHint, webHintParams);
 
+        // Custom gift screensaver path
+        inner.addView(createLabel("Custom screensaver image path (optional)"));
+        customScreensaverField = createTextField(ApiPrefs.getCustomGiftScreensaverPath(this));
+        inner.addView(customScreensaverField, createFieldParams());
+
+        TextView screensaverHint = new TextView(this);
+        screensaverHint.setText("Full path to a custom image on the device (e.g. /media/My Files/gift.png). Leave blank to use the default TRMNL gift screensaver.");
+        screensaverHint.setTextSize(10);
+        screensaverHint.setTextColor(0xFF888888);
+        LinearLayout.LayoutParams ssHintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        ssHintParams.topMargin = 4;
+        inner.addView(screensaverHint, ssHintParams);
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(
@@ -138,6 +154,8 @@ public class GiftModeSettingsActivity extends Activity {
                         toNameField.getText().toString().trim());
                 ApiPrefs.setGiftWebSetup(GiftModeSettingsActivity.this,
                         webSetupCheckbox.isChecked());
+                ApiPrefs.setCustomGiftScreensaverPath(GiftModeSettingsActivity.this,
+                        customScreensaverField.getText().toString());
                 // Go back to main display
                 android.content.Intent intent = new android.content.Intent(GiftModeSettingsActivity.this, DisplayActivity.class);
                 intent.setFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);

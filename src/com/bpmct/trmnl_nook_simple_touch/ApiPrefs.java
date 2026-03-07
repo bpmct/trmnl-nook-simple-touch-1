@@ -16,6 +16,7 @@ public class ApiPrefs {
     private static final String KEY_GIFT_FROM_NAME = "gift_from_name";
     private static final String KEY_GIFT_TO_NAME = "gift_to_name";
     private static final String KEY_GIFT_WEB_SETUP = "gift_web_setup";
+    private static final String KEY_CUSTOM_GIFT_SCREENSAVER = "custom_gift_screensaver_path";
     private static final String KEY_ALLOW_HTTP = "allow_http";
     private static final String KEY_ALLOW_SELF_SIGNED_CERTS = "allow_self_signed_certs";
     private static final String KEY_AUTO_DISABLE_WIFI = "auto_disable_wifi";
@@ -178,6 +179,17 @@ public class ApiPrefs {
     public static void setGiftWebSetup(Context context, boolean enabled) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(KEY_GIFT_WEB_SETUP, enabled).commit();
+    }
+
+    /** Custom gift mode screensaver image path on device (e.g. /media/My Files/gift.png). */
+    public static String getCustomGiftScreensaverPath(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_CUSTOM_GIFT_SCREENSAVER, "");
+    }
+
+    public static void setCustomGiftScreensaverPath(Context context, String path) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_CUSTOM_GIFT_SCREENSAVER, path != null ? path.trim() : "").commit();
     }
 
     /** Whether to allow HTTP (non-HTTPS) connections. Default false. */

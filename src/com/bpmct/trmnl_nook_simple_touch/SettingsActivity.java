@@ -14,6 +14,8 @@ import android.widget.TextView;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.ScrollView;
+import android.content.Intent;
+import android.net.Uri;
 
 public class SettingsActivity extends Activity {
     private static final int APP_ROTATION_DEGREES = 90;
@@ -78,6 +80,17 @@ public class SettingsActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         editParams.topMargin = 8;
         main.addView(editButton, editParams);
+
+        Button deviceSettingsButton = createGreyButton("Device Settings on trmnl.com");
+        deviceSettingsButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://usetrmnl.com/devices")));
+            }
+        });
+        LinearLayout.LayoutParams deviceSettingsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        deviceSettingsParams.topMargin = 6;
+        main.addView(deviceSettingsButton, deviceSettingsParams);
 
         // Display
         main.addView(createSectionLabel("Display"));

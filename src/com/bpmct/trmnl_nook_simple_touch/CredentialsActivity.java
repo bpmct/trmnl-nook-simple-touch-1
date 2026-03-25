@@ -11,6 +11,8 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.content.Intent;
+import android.net.Uri;
 
 public class CredentialsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +72,22 @@ public class CredentialsActivity extends Activity {
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             hintParams.topMargin = 8;
             inner.addView(credHint, hintParams);
+
+            Button deviceSettingsLink = new Button(this);
+            deviceSettingsLink.setText("Open Device Settings on trmnl.com →");
+            deviceSettingsLink.setTextSize(11);
+            deviceSettingsLink.setTextColor(0xFF0066CC);
+            deviceSettingsLink.setBackground(null);
+            deviceSettingsLink.setPadding(0, 0, 0, 0);
+            deviceSettingsLink.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://usetrmnl.com/devices")));
+                }
+            });
+            LinearLayout.LayoutParams linkParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            linkParams.topMargin = 2;
+            inner.addView(deviceSettingsLink, linkParams);
         }
 
         TextView idLabel = new TextView(this);

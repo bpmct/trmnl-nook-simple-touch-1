@@ -955,7 +955,7 @@ public class DisplayActivity extends Activity {
             
             // Primary CTA: web URL
             TextView urlLabel = new TextView(this);
-            urlLabel.setText("Visit this URL on your phone or computer:");
+            urlLabel.setText("Visit this URL on your computer:");
             urlLabel.setTextSize(15);
             urlLabel.setTextColor(0xFF000000);
             LinearLayout.LayoutParams urlLabelParams = new LinearLayout.LayoutParams(

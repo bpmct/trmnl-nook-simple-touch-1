@@ -60,35 +60,16 @@ public class SettingsActivity extends Activity {
         title.setTextColor(0xFF000000);
         main.addView(title);
 
-        // ── 2-column layout ──────────────────────────────────────────────
-        LinearLayout columns = new LinearLayout(this);
-        columns.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams columnsParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.FILL_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        columnsParams.topMargin = 4;
-
-        LinearLayout left = new LinearLayout(this);
-        left.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        leftParams.rightMargin = 12;
-
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-
-        // ── LEFT: Credentials ────────────────────────────────────────────
-        left.addView(createSectionLabel("Credentials"));
+        // Credentials
+        main.addView(createSectionLabel("Credentials"));
         statusView = new TextView(this);
         statusView.setTextSize(12);
         statusView.setTextColor(0xFF444444);
         statusView.setText(ApiPrefs.hasCredentials(this) ? "Configured" : "Not set");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusParams.topMargin = 4;
-        left.addView(statusView, statusParams);
-
+        statusParams.topMargin = 6;
+        main.addView(statusView, statusParams);
         Button editButton = createGreyButton("Edit Credentials");
         editButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -97,16 +78,38 @@ public class SettingsActivity extends Activity {
         });
         LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        editParams.topMargin = 6;
-        left.addView(editButton, editParams);
+        editParams.topMargin = 8;
+        main.addView(editButton, editParams);
 
+        // Display
+        main.addView(createSectionLabel("Display"));
+        allowSleepCheck = new CheckBox(this);
+        allowSleepCheck.setText("Sleep between updates");
+        allowSleepCheck.setTextColor(0xFF000000);
+        allowSleepCheck.setChecked(ApiPrefs.isAllowSleep(this));
+        main.addView(allowSleepCheck);
+
+        sleepHint = new TextView(this);
+        sleepHint.setText("Set screensaver to TRMNL, sleep after 2 min");
+        sleepHint.setTextSize(11);
+        sleepHint.setTextColor(0xFF888888);
+        sleepHint.setPadding(40, 0, 0, 0);
+        sleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
+        main.addView(sleepHint);
+
+        allowSleepCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                sleepHint.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+                flashRefresh();
+            }
+        });
+
+        // Gift Mode
+        main.addView(createSectionLabel("Gift Mode"));
         giftModeCheck = new CheckBox(this);
-        giftModeCheck.setText("Gift mode");
+        giftModeCheck.setText("Enable gift mode");
         giftModeCheck.setTextColor(0xFF000000);
         giftModeCheck.setChecked(ApiPrefs.isGiftModeEnabled(this));
-        LinearLayout.LayoutParams giftCheckParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        giftCheckParams.topMargin = 6;
         giftModeCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 updateGiftSettingsVisibility();
@@ -115,7 +118,7 @@ public class SettingsActivity extends Activity {
                 }
             }
         });
-        left.addView(giftModeCheck, giftCheckParams);
+        main.addView(giftModeCheck);
 
         giftSettingsButton = createGreyButton("Configure Gift Mode");
         giftSettingsButton.setOnClickListener(new View.OnClickListener() {
@@ -125,56 +128,40 @@ public class SettingsActivity extends Activity {
         });
         LinearLayout.LayoutParams giftBtnParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        giftBtnParams.topMargin = 4;
-        left.addView(giftSettingsButton, giftBtnParams);
+        giftBtnParams.topMargin = 6;
+        main.addView(giftSettingsButton, giftBtnParams);
         updateGiftSettingsVisibility();
 
-        // ── LEFT: Display ─────────────────────────────────────────────────
-        left.addView(createSectionLabel("Display"));
-        allowSleepCheck = new CheckBox(this);
-        allowSleepCheck.setText("Sleep between updates");
-        allowSleepCheck.setTextColor(0xFF000000);
-        allowSleepCheck.setChecked(ApiPrefs.isAllowSleep(this));
-        left.addView(allowSleepCheck);
-
-        sleepHint = new TextView(this);
-        sleepHint.setText("Screensaver + sleep 2 min");
-        sleepHint.setTextSize(11);
-        sleepHint.setTextColor(0xFF888888);
-        sleepHint.setPadding(40, 0, 0, 0);
-        sleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
-        left.addView(sleepHint);
-
-        allowSleepCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                sleepHint.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-                flashRefresh();
-            }
-        });
-
-        // ── RIGHT: Network ────────────────────────────────────────────────
-        right.addView(createSectionLabel("Network"));
+        // Network (for self-hosted/BYOS setups)
+        main.addView(createSectionLabel("Network"));
         allowHttpCheck = new CheckBox(this);
-        allowHttpCheck.setText("Allow HTTP");
+        allowHttpCheck.setText("Allow HTTP (insecure)");
         allowHttpCheck.setTextColor(0xFF000000);
         allowHttpCheck.setChecked(ApiPrefs.isAllowHttp(this));
-        right.addView(allowHttpCheck);
+        main.addView(allowHttpCheck);
 
         TextView httpHint = new TextView(this);
-        httpHint.setText("For local/BYOS servers");
+        httpHint.setText("Enable for local/BYOS servers without HTTPS");
         httpHint.setTextSize(11);
         httpHint.setTextColor(0xFF888888);
         httpHint.setPadding(40, 0, 0, 0);
-        right.addView(httpHint);
+        main.addView(httpHint);
 
         allowSelfSignedCheck = new CheckBox(this);
-        allowSelfSignedCheck.setText("Self-signed certs");
+        allowSelfSignedCheck.setText("Allow self-signed certificates");
         allowSelfSignedCheck.setTextColor(0xFF000000);
         allowSelfSignedCheck.setChecked(ApiPrefs.isAllowSelfSignedCerts(this));
         LinearLayout.LayoutParams selfSignedParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        selfSignedParams.topMargin = 6;
-        right.addView(allowSelfSignedCheck, selfSignedParams);
+        selfSignedParams.topMargin = 8;
+        main.addView(allowSelfSignedCheck, selfSignedParams);
+
+        TextView selfSignedHint = new TextView(this);
+        selfSignedHint.setText("Trust HTTPS servers with self-signed certs");
+        selfSignedHint.setTextSize(11);
+        selfSignedHint.setTextColor(0xFF888888);
+        selfSignedHint.setPadding(40, 0, 0, 0);
+        main.addView(selfSignedHint);
 
         autoDisableWifiCheck = new CheckBox(this);
         autoDisableWifiCheck.setText("Auto-disable WiFi");
@@ -182,22 +169,18 @@ public class SettingsActivity extends Activity {
         autoDisableWifiCheck.setChecked(ApiPrefs.isAutoDisableWifi(this));
         LinearLayout.LayoutParams wifiParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        wifiParams.topMargin = 6;
-        right.addView(autoDisableWifiCheck, wifiParams);
+        wifiParams.topMargin = 8;
+        main.addView(autoDisableWifiCheck, wifiParams);
 
         TextView wifiHint = new TextView(this);
-        wifiHint.setText("Save battery between fetches");
+        wifiHint.setText("Turn off WiFi between fetches to save battery");
         wifiHint.setTextSize(11);
         wifiHint.setTextColor(0xFF888888);
         wifiHint.setPadding(40, 0, 0, 0);
-        right.addView(wifiHint);
+        main.addView(wifiHint);
 
-        columns.addView(left, leftParams);
-        columns.addView(right, rightParams);
-        main.addView(columns, columnsParams);
-
-        // ── Debug Logs (full width) ───────────────────────────────────────
-        main.addView(createSectionLabel("Debug Logs"));
+        // Debug & Device
+        main.addView(createSectionLabel("Debug & Device"));
         fileLoggingCheck = new CheckBox(this);
         fileLoggingCheck.setText("Save logs to file");
         fileLoggingCheck.setTextColor(0xFF000000);
@@ -221,9 +204,6 @@ public class SettingsActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clearParams.topMargin = 6;
         main.addView(clearLogsButton, clearParams);
-
-        // ── System (full width) ───────────────────────────────────────────
-        main.addView(createSectionLabel("System"));
 
         LinearLayout deviceRow = new LinearLayout(this);
         deviceRow.setOrientation(LinearLayout.HORIZONTAL);

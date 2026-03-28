@@ -300,6 +300,23 @@ public class SettingsActivity extends Activity {
         deviceRow.addView(appsDrawerButton, appsParams);
         panelSystem.addView(deviceRow, deviceRowParams);
 
+        Button sleepNowButton = createGreyButton("Sleep Now");
+        LinearLayout.LayoutParams sleepNowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sleepNowParams.topMargin = 8;
+        sleepNowButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                finish(); // return to DisplayActivity, which will call sleepNow() via intent
+                android.content.Intent i = new android.content.Intent(
+                        SettingsActivity.this,
+                        DisplayActivity.class);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                i.putExtra("action", "sleep");
+                startActivity(i);
+            }
+        });
+        panelSystem.addView(sleepNowButton, sleepNowParams);
+
         main.addView(panelSystem);
 
         // ── Tab switching logic ───────────────────────────────────────────────

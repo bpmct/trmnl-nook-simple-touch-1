@@ -1,197 +1,87 @@
-# Agent notes (legacy Android / NOOK Simple Touch)
+# Agent / Developer Notes
 
-This repo targets very old Android and an Eclipse ADT / Ant-era workflow.
-Do not suggest modern Android tooling or APIs unless they are explicitly
-compatible with Android 2.1 (API 7).
+This file documents non-obvious implementation decisions and dead ends for future agents or contributors working on this codebase.
 
-Current notes:
-- Main entry activity: `DisplayActivity`.
-- API credentials/base URL live in app settings (`ApiPrefs`).
+---
 
-## Key Patterns
+## Forcing the Screen Off on NOOK Simple Touch (Android 2.3 / API 10)
 
-ADB-over-TCP on NOOK is flaky after sleep/wake. The `nook-adb.sh` script
-auto-recovers from `offline` state (kill-server → reconnect cycle), so
-**always use `tools/nook-adb.sh`** — never call `adb` directly.
+The NOOK Simple Touch runs a heavily customised Android 2.3 (Gingerbread) firmware. Putting the screen to sleep programmatically from a third-party app is much harder than it looks. This section documents every approach tried and the one that actually works.
 
-Saved file logs (when "Save to file" enabled) live at:
-- `/media/My Files/trmnl.log`
+### Device facts
+- SoC: OMAP3 (Texas Instruments)
+- Android API: 10 (Gingerbread 2.3.x)
+- ADB: runs as `uid=0` (root), `ro.secure=0`
+- Rooted via Phoenix Project; `/system/bin/su` and `/system/xbin/su` present
+- Superuser manager: `com.noshufou.android.su` (stores per-UID **and** per-command grants in `permissions.sqlite`)
+- Screen timeout setting: `mTotalDelaySetting=120000` (2 min), controlled by `Settings.System.SCREEN_OFF_TIMEOUT`
+- EPD (e-ink) driver: `NATIVE-EPD` / `EPD#PowerManager` — screensaver rendering is triggered by `PowerManagerService` during the normal screen-off path
+- Power button fires `KEY_POWER (0x66)` on `/dev/input/event1`
 
-To read logs:
-```bash
-# Using nook-adb.sh wrapper (recommended)
-tools/nook-adb.sh --ip <ip> get-logs [n]  # default: last 200 lines
+### What does NOT work
 
-# Or direct adb command
-adb -s <ip>:5555 shell "tail -n 200 '/media/My Files/trmnl.log'"
+| Approach | Why it fails |
+|---|---|
+| `PowerManager.goToSleep(long)` | Requires `android.permission.DEVICE_POWER` — a `signatureOrSystem` permission. Not grantable to third-party apps even on a rooted device. Throws `SecurityException`. |
+| `KEYCODE_POWER` via `input keyevent 26` | No-op on NOOK firmware. The power key is handled at the kernel level before it reaches Android's input system. |
+| `sendevent /dev/input/event1 1 116 1` (raw EV_KEY KEY_POWER) | Also no-op for sleep purposes. The kernel intercepts it before `PowerManagerService` sees it in a useful way. |
+| `echo mem > /sys/power/state` via `su` | Works as a raw kernel suspend, **but** bypasses the Android power manager entirely. Result: no EPD screensaver renders, wake behaviour is broken (home button unreliable), and it is indistinguishable from a hard crash from Android's perspective. |
+| `service call power 6 i32 ...` via `su` | Wrong transaction number. `i64` is not supported by this firmware's `service` binary — only `i32` and `s16`. |
+| `service call power 2 i32 <uptime> i32 0` via `su` | Correct binder call (`IPowerManager.goToSleep`, transaction 2 on API 10), and it works from ADB shell. **But** the Superuser dialog appears first, which itself counts as user activity and resets the power manager idle timer. By the time the user taps Allow and `su` actually executes, the timestamp passed to `goToSleep` is stale — the power manager ignores it. Even if you pre-grant via `permissions.sqlite`, the grant is per-command (the timestamp is part of the command string), so it prompts every time. |
+| `am broadcast -a com.bn.standby.ACTION_PRE_STANDBY` | WindowManager logs `Handling com.bn.standby.ACTION_PRE_STANDBY` but the broadcast alone does not sleep the screen — it is sent *by* the power manager *after* the screen is already off, not the trigger for it. |
+
+### What DOES work — the `WRITE_SETTINGS` timeout trick
+
+`android.permission.WRITE_SETTINGS` is a **normal** permission any third-party app can hold. Using it, the app can set `Settings.System.SCREEN_OFF_TIMEOUT` to a very small value (e.g. 1000 ms). Android's own `PowerManagerService` then fires the natural screen-off path within ~1 second, which:
+
+- Triggers the NOOK EPD screensaver render (`EPD#PowerManager fillRegion`)
+- Calls `set_screen_state 0` properly
+- Broadcasts `ACTION_SCREEN_OFF`
+- Sets up the keyguard correctly so home/power button wakes the device normally
+
+The sleep sequence in `DisplayActivity.sleepNow()`:
+
+1. Write the current TRMNL image to `/media/screensavers/TRMNL/display.png` (so the NOOK screensaver shows the right content)
+2. Schedule an `AlarmManager` wake alarm for the next refresh cycle
+3. Turn WiFi off if auto-disable is enabled
+4. Call `getWindow().clearFlags(FLAG_KEEP_SCREEN_ON)` — removes the wake lock
+5. Set `sleepPending = true` — blocks `onResume` from re-asserting `FLAG_KEEP_SCREEN_ON` during the pause/resume cycle caused by the menu dismissing
+6. Post a 5-second delayed `Runnable` (grace period for the user's finger to lift) that sets `Settings.System.SCREEN_OFF_TIMEOUT = 1000`
+7. On the next `onResume` (after wake), restore `SCREEN_OFF_TIMEOUT = 120000` and re-assert `FLAG_KEEP_SCREEN_ON`
+
+**Required manifest permission:**
+```xml
+<uses-permission android:name="android.permission.WRITE_SETTINGS" />
 ```
 
-### HTTP Requests
-- All HTTPS goes through `BouncyCastleHttpClient` (TLS 1.2 support for old Android)
-- HTTP (non-TLS) supported when "Allow HTTP" setting enabled (for BYOS/local servers)
-- Self-signed certs supported when "Allow self-signed certificates" enabled
-- **Always retry failed requests** with 3s backoff (network often flaky after wake)
-- Wait for WiFi connectivity before attempting fetches (`waitForWifiThenFetch()`)
-- Image fetches need retry too, not just API calls
+No root, no su, no Superuser dialog.
 
-### Testing on Device
+---
 
-**Standard workflow for testing changes:**
+## Build Environment
 
-```bash
-# Always use build-install-run (builds, installs, launches app)
-NOOK_IP=<ip> tools/nook-adb.sh build-install-run
+- Build tool: Apache Ant 1.8.3 (bundled in ADT bundle)
+- Java target: API 10 / Android 2.3
+- Build command (inside devcontainer):
+  ```
+  cd /workspace && /opt/adt/adt-bundle-linux-x86_64-20140702/eclipse/plugins/org.apache.ant_1.8.3.v201301120609/bin/ant -Dbuild.compiler=modern debug
+  ```
+- ADB binary: `/opt/adt/adt-bundle-linux-x86_64-20140702/sdk/platform-tools/adb` (v1.0.31)
+- ADB connect: use bare IP, e.g. `adb connect 192.168.1.249` — the old client appends `:5555` automatically
+- Install: `adb -s 192.168.1.249:5555 install -r /workspace/bin/trmnl-nook-simple-touch-debug.apk`
+- If install fails with `INSTALL_FAILED_INSUFFICIENT_STORAGE`: uninstall first (`adb uninstall com.bpmct.trmnl_nook_simple_touch`), then install fresh
 
-# Or with logcat output:
-NOOK_IP=<ip> tools/nook-adb.sh build-install-run-logcat
+## Devcontainer
+
+The devcontainer at `.devcontainer/devcontainer.json` is the canonical build environment. Start it with:
+```
+cd /home/coder/trmnl-nook-sleep && devcontainer up --workspace-folder .
+```
+Then exec into it:
+```
+docker exec <container_id> bash -c "<command>"
 ```
 
-**Initial worktree setup:**
-- Run `.mux/init` to symlink `local.properties` and JAR files from main repo
-- This is required for worktrees to build successfully
+## Worktrees
 
-**Other useful commands:**
-- Run logcat in background: `tools/nook-adb.sh logcat` to monitor while testing
-- Read file logs: `tools/nook-adb.sh --ip <ip> get-logs [n]` (default: 200 lines)
-- Device often goes offline when WiFi auto-disabled; use "Auto-disable WiFi" setting OFF during dev
-- ADB reconnect: `tools/nook-adb.sh connect` after device comes back online
-- Clean build: `tools/nook-adb.sh --clean build-install-run`
-
-### Boot & Error UX
-
-### Prefs presets (SaaS / BYOS)
-
-Device config presets live in `~/trmnl-prefs/` and are shared across all worktrees via symlink (created by `.mux/init`).
-
-To switch settings quickly, create preset files like `~/trmnl-prefs/myserver.args`. Use one argument per line so the shell doesn't have to parse quoting.
-
-Example: `prefs/selfhosted.args`
-
-```
---string
-api_id
-A1:B2:C3:D4:E5:F6
---string
-api_token
-YOUR_TOKEN
---string
-api_base_url
-http://192.168.1.232:2300/api
---bool
-allow_http
-true
---bool
-allow_sleep
-false
-```
-
-Apply with:
-
-```
-tools/nook-adb.sh --ip <ip> set-preset selfhosted
-```
-
-For SaaS, create `prefs/saas.args` with the hosted credentials/base URL, then:
-
-```
-tools/nook-adb.sh --ip <ip> set-preset saas
-```
-- Boot screen: header with icon + status text + streaming logs below
-- Update status via `setBootStatus("message")` during boot
-- On error: show boot header with "Error - tap to retry" + full logs
-- Call `hideBootScreen()` only when content successfully loads
-
-### Logging
-- `logD()`/`logW()` stream to screen during boot (while `!bootComplete`)
-- After boot completes, logs only go to Android logcat
-- `logE()` always shows on screen
-
-## Nook Device Details
-
-### Nook Settings App
-The device has a third-party settings app installed:
-- **Package**: `com.home.nmyshkin.nooksettings`
-- **Launchable activity**: `net.dinglisch.android.tasker.Kid`
-
-To launch it from Java code:
-```java
-Intent intent = new Intent();
-intent.setComponent(new ComponentName(
-    "com.home.nmyshkin.nooksettings",
-    "net.dinglisch.android.tasker.Kid"));
-startActivity(intent);
-```
-
-To launch via ADB:
-```bash
-adb -s <ip>:5555 shell am start -n com.home.nmyshkin.nooksettings/net.dinglisch.android.tasker.Kid
-```
-
-The TRMNL API credentials (Device ID + Token) are found inside this app under **Developer Perks**.
-
-### Finding the launchable activity of an installed APK
-```bash
-# Pull APK from device, then inspect with aapt
-adb -s <ip>:5555 pull $(adb -s <ip>:5555 shell pm path <pkg> | sed 's/package://') /tmp/app.apk
-aapt dump badging /tmp/app.apk | grep launchable
-```
-
-## Coder Agent Workflow
-
-### Running the devcontainer
-This repo has a `.devcontainer/` with a full Android SDK (Eclipse ADT bundle, Java 8, Ant).
-Use the `devcontainer` CLI (available at `/tmp/coder-script-data/bin/devcontainer`) to start it:
-
-```bash
-devcontainer up --workspace-folder /home/coder/trmnl-nook
-```
-
-The `initializeCommand` installs QEMU binfmt handlers for x86/x86_64 emulation (required because
-the ADT tools are 32-bit x86 binaries running on an ARM64 host). This must succeed before the
-build image can be used.
-
-Once up, exec commands into the container:
-```bash
-CONTAINER_ID=$(docker ps -q --filter "label=devcontainer.local_folder=/home/coder/trmnl-nook")
-docker exec "$CONTAINER_ID" bash -c "cd /workspace && tools/nook-adb.sh --ip <ip> build-install-run"
-```
-
-### API compatibility gotchas
-The Nook Simple Touch runs **Android 2.3 (API 10)**. Several commonly-used View methods don't exist:
-- `View.setBackground(Drawable)` — added API 16. Use `setBackgroundDrawable(Drawable)` instead.
-- `View.setBackground(null)` — same issue. Use `setBackgroundDrawable(null)`.
-- Always test against API 10; the Ant build target is API 20 so the compiler won't catch these — they crash at runtime with `NoSuchMethodError`.
-
-### INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES
-If `adb install -r` fails with this error, the existing APK was signed with a different debug key.
-The `adb uninstall` command may hang on this device. Use `adb install` (without `-r`) after the
-existing install is gone, or push + `pm install` directly:
-
-```bash
-# Uninstall (may hang — kill if needed)
-adb -s <ip>:5555 shell pm uninstall -k <package>
-
-# If uninstall hangs, the package may not be installed — just install fresh:
-adb -s <ip>:5555 install bin/trmnl-nook-simple-touch-debug.apk
-```
-
-### Pushing to upstream
-The upstream repo is `usetrmnl/trmnl-nook-simple-touch`. The Coder workspace user (`bpmct`) does
-not have direct write access. Workflow:
-
-1. Fork via `gh repo fork usetrmnl/trmnl-nook-simple-touch --clone=false`
-2. Push changes to a branch on the fork: `git push origin main:my-branch-name`
-3. Open PR: `gh pr create --repo usetrmnl/trmnl-nook-simple-touch --head bpmct:my-branch-name ...`
-
-Note: GitHub auto-syncs forks, so pushing directly to `main` on the fork will not create a PR
-(GitHub sees no diff). Always push to a named branch.
-
-## Index
-
-- `AGENTS/platform-constraints.md`
-- `AGENTS/build-tooling.md`
-- `AGENTS/release.md`
-- `AGENTS/tls-network.md`
-- `AGENTS/sleep-wake-cycle.md`
-- `AGENTS/ux-patterns.md`
-- `AGENTS/references.md`
+Active development happens in the worktree at `/home/coder/trmnl-nook-sleep` on branch `feature/tap-menu-sleep`. The main checkout is at `/home/coder/trmnl-nook-simple-touch`.

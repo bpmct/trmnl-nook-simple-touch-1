@@ -71,7 +71,6 @@ public class DisplayActivity extends Activity {
     private TextView batteryView;
     private Button nextButton;
     private Button settingsButton;
-    private Button sleepButton;
     private TextView loadingStatusView;
     private RotateLayout imageRotateLayout;
     private boolean menuVisible = false;
@@ -295,27 +294,6 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         settingsParams.leftMargin = 18;
         menuLayout.addView(settingsButton, settingsParams);
-
-        sleepButton = new Button(this);
-        sleepButton.setText("Sleep");
-        sleepButton.setTextColor(0xFF000000);
-        sleepButton.setClickable(true);
-        sleepButton.setOnTouchListener(new View.OnTouchListener() {
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_UP) {
-                    logD("menu: sleep tapped");
-                    hideMenu();
-                    sleepNow();
-                    return true;
-                }
-                return false;
-            }
-        });
-        LinearLayout.LayoutParams sleepParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        sleepParams.leftMargin = 18;
-        menuLayout.addView(sleepButton, sleepParams);
 
         loadingStatusView = new TextView(this);
         loadingStatusView.setTextColor(0xFF000000);
@@ -564,6 +542,12 @@ public class DisplayActivity extends Activity {
             if (contentScroll != null) contentScroll.setVisibility(View.VISIBLE);
             if (logView != null) logView.setVisibility(View.VISIBLE);
             intent.removeExtra(EXTRA_CLEAR_IMAGE);
+        }
+        if ("sleep".equals(intent.getStringExtra("action"))) {
+            intent.removeExtra("action");
+            refreshHandler.post(new Runnable() {
+                public void run() { sleepNow(); }
+            });
         }
     }
 
@@ -1150,7 +1134,6 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.GONE);
         if (nextButton != null) nextButton.setVisibility(showNextButton ? View.VISIBLE : View.GONE);
         if (settingsButton != null) settingsButton.setVisibility(View.GONE);
-        if (sleepButton != null) sleepButton.setVisibility(View.GONE);
         if (menuLayout != null && menuScrim != null) {
             menuLayout.setVisibility(View.VISIBLE);
             menuScrim.setVisibility(View.VISIBLE);
@@ -1165,7 +1148,6 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
         if (nextButton != null) nextButton.setVisibility(View.VISIBLE);
         if (settingsButton != null) settingsButton.setVisibility(View.VISIBLE);
-        if (sleepButton != null) sleepButton.setVisibility(View.VISIBLE);
         // No forceFullRefresh here - opening menu doesn't need e-ink flash
     }
 

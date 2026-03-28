@@ -1281,26 +1281,30 @@ public class DisplayActivity extends Activity {
         logD("sleepNow: clearing keep-screen-awake flag");
         setKeepScreenAwake(false);
 
-        // Inject a KEYCODE_POWER keyevent to immediately blank the screen.
-        // setKeepScreenAwake(false) alone just removes the "stay on" flag; the
-        // NOOK's idle timeout might be many minutes. Runtime.exec() the input
-        // command (works on ADB-enabled / rooted NOOK) to force the screen off now.
-        logD("sleepNow: injecting KEYCODE_POWER to force screen off");
-        try {
-            Runtime.getRuntime().exec(new String[]{"input", "keyevent", "26"});
-            logD("sleepNow: KEYCODE_POWER injected ok");
-        } catch (Throwable t) {
-            logW("sleepNow: KEYCODE_POWER inject failed: " + t);
-            // Fallback: try via sh -c (some NOOK firmware needs this)
-            try {
-                Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", "input keyevent 26"});
-                logD("sleepNow: KEYCODE_POWER via sh ok");
-            } catch (Throwable t2) {
-                logW("sleepNow: sh fallback also failed: " + t2);
+        // Delay the KEYCODE_POWER by 5s so the menu has time to dismiss and
+        // the user can lift their finger — otherwise the touch that closes the
+        // menu wakes the screen right back up after we blank it.
+        logD("sleepNow: screen-off in 5s (finger-lift grace period)");
+        refreshHandler.postDelayed(new Runnable() {
+            public void run() {
+                logD("sleepNow: injecting KEYCODE_POWER to force screen off");
+                try {
+                    Runtime.getRuntime().exec(new String[]{"input", "keyevent", "26"});
+                    logD("sleepNow: KEYCODE_POWER injected ok");
+                } catch (Throwable t) {
+                    logW("sleepNow: KEYCODE_POWER inject failed: " + t);
+                    try {
+                        Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", "input keyevent 26"});
+                        logD("sleepNow: KEYCODE_POWER via sh ok");
+                    } catch (Throwable t2) {
+                        logW("sleepNow: sh fallback also failed: " + t2);
+                    }
+                }
+                logD("sleepNow: done");
             }
-        }
+        }, 5000);
 
-        logD("sleepNow: done");
+        logD("sleepNow: setup complete, waiting 5s before screen-off");
     }
 
     private void flashEinkTransition() {

@@ -1277,13 +1277,30 @@ public class DisplayActivity extends Activity {
             logD("sleepNow: auto-disable WiFi is OFF, leaving WiFi on");
         }
 
-        // Clear FLAG_KEEP_SCREEN_ON so the NOOK screen timeout can fire and the
-        // device will blank normally. This is the key step — without it the screen
-        // stays on forever regardless of the screensaver.
-        logD("sleepNow: clearing keep-screen-awake flag, screen will blank on idle timeout");
+        // Clear FLAG_KEEP_SCREEN_ON so the window manager stops keeping the screen on.
+        logD("sleepNow: clearing keep-screen-awake flag");
         setKeepScreenAwake(false);
 
-        logD("sleepNow: done — device will sleep when idle timeout fires");
+        // Inject a KEYCODE_POWER keyevent to immediately blank the screen.
+        // setKeepScreenAwake(false) alone just removes the "stay on" flag; the
+        // NOOK's idle timeout might be many minutes. Runtime.exec() the input
+        // command (works on ADB-enabled / rooted NOOK) to force the screen off now.
+        logD("sleepNow: injecting KEYCODE_POWER to force screen off");
+        try {
+            Runtime.getRuntime().exec(new String[]{"input", "keyevent", "26"});
+            logD("sleepNow: KEYCODE_POWER injected ok");
+        } catch (Throwable t) {
+            logW("sleepNow: KEYCODE_POWER inject failed: " + t);
+            // Fallback: try via sh -c (some NOOK firmware needs this)
+            try {
+                Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", "input keyevent 26"});
+                logD("sleepNow: KEYCODE_POWER via sh ok");
+            } catch (Throwable t2) {
+                logW("sleepNow: sh fallback also failed: " + t2);
+            }
+        }
+
+        logD("sleepNow: done");
     }
 
     private void flashEinkTransition() {

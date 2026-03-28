@@ -93,6 +93,9 @@ public class DisplayActivity extends Activity {
     private BroadcastReceiver alarmReceiver;
     private BroadcastReceiver connectivityReceiver;
     private Runnable pendingSleepRunnable;
+    private Runnable pendingScreenOffRunnable;
+    /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON. */
+    private volatile boolean sleepPending = false;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
     private static final long CONNECTIVITY_MAX_WAIT_MS = 30 * 1000;
@@ -393,7 +396,11 @@ public class DisplayActivity extends Activity {
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setKeepScreenAwake(true);
+        if (!sleepPending) {
+            setKeepScreenAwake(true);
+        } else {
+            logD("onResume: sleepPending=true, skipping setKeepScreenAwake");
+        }
 
         boolean wifiJustOn = ensureWifiOnWhenForeground();
 
@@ -563,6 +570,8 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingSleepRunnable);
             pendingSleepRunnable = null;
         }
+        // Don't cancel pendingScreenOffRunnable on pause — it needs to fire
+        // even after the menu-dismiss causes a brief onPause/onResume cycle.
         if (pendingWifiWarmupRunnable != null) {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
             pendingWifiWarmupRunnable = null;
@@ -1281,12 +1290,17 @@ public class DisplayActivity extends Activity {
         logD("sleepNow: clearing keep-screen-awake flag");
         setKeepScreenAwake(false);
 
-        // Delay the KEYCODE_POWER by 5s so the menu has time to dismiss and
-        // the user can lift their finger — otherwise the touch that closes the
-        // menu wakes the screen right back up after we blank it.
-        logD("sleepNow: screen-off in 5s (finger-lift grace period)");
-        refreshHandler.postDelayed(new Runnable() {
+        // Delay KEYCODE_POWER by 5s — gives the menu time to dismiss and the
+        // user's finger time to lift. sleepPending blocks onResume from
+        // re-asserting FLAG_KEEP_SCREEN_ON during this window.
+        sleepPending = true;
+        if (pendingScreenOffRunnable != null) {
+            refreshHandler.removeCallbacks(pendingScreenOffRunnable);
+        }
+        pendingScreenOffRunnable = new Runnable() {
             public void run() {
+                pendingScreenOffRunnable = null;
+                sleepPending = false;
                 logD("sleepNow: injecting KEYCODE_POWER to force screen off");
                 try {
                     Runtime.getRuntime().exec(new String[]{"input", "keyevent", "26"});
@@ -1302,9 +1316,9 @@ public class DisplayActivity extends Activity {
                 }
                 logD("sleepNow: done");
             }
-        }, 5000);
-
-        logD("sleepNow: setup complete, waiting 5s before screen-off");
+        };
+        refreshHandler.postDelayed(pendingScreenOffRunnable, 5000);
+        logD("sleepNow: setup complete, screen-off in 5s (sleepPending=true)");
     }
 
     private void flashEinkTransition() {

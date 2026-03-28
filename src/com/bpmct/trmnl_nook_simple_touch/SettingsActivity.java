@@ -25,6 +25,7 @@ public class SettingsActivity extends Activity {
     private static final int APP_ROTATION_DEGREES = 90;
     private TextView statusView;
     private CheckBox allowSleepCheck;
+    private CheckBox superSleepCheck;
     private CheckBox fileLoggingCheck;
     private CheckBox giftModeCheck;
     private Button giftSettingsButton;
@@ -116,16 +117,31 @@ public class SettingsActivity extends Activity {
         panelGeneral.addView(allowSleepCheck);
 
         sleepHint = new TextView(this);
-        sleepHint.setText("Set screensaver to TRMNL, sleep after 2 min");
+        sleepHint.setText("Saves battery. In Nook Settings: set screensaver to TRMNL with 2 min timeout.");
         sleepHint.setTextSize(11);
         sleepHint.setTextColor(0xFF888888);
-        sleepHint.setPadding(40, 0, 0, 0);
-        sleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
+        sleepHint.setPadding(40, 0, 0, 8);
         panelGeneral.addView(sleepHint);
+
+        superSleepCheck = new CheckBox(this);
+        superSleepCheck.setText("Aggressive sleep");
+        superSleepCheck.setTextColor(0xFF000000);
+        superSleepCheck.setChecked(ApiPrefs.isSuperSleep(this));
+        superSleepCheck.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
+        panelGeneral.addView(superSleepCheck);
+
+        final TextView superSleepHint = new TextView(this);
+        superSleepHint.setText("Saves more battery. Sleeps immediately after each scheduled image refresh instead of waiting for screen timeout.");
+        superSleepHint.setTextSize(11);
+        superSleepHint.setTextColor(0xFF888888);
+        superSleepHint.setPadding(40, 0, 0, 0);
+        superSleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
+        panelGeneral.addView(superSleepHint);
 
         allowSleepCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                sleepHint.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+                superSleepCheck.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+                superSleepHint.setVisibility(isChecked ? View.VISIBLE : View.GONE);
                 flashRefresh();
             }
         });
@@ -298,6 +314,23 @@ public class SettingsActivity extends Activity {
             }
         });
         deviceRow.addView(appsDrawerButton, appsParams);
+
+        Button sleepNowButton = createGreyButton("Sleep");
+        LinearLayout.LayoutParams sleepNowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sleepNowParams.leftMargin = 8;
+        sleepNowButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                finish();
+                android.content.Intent i = new android.content.Intent(
+                        SettingsActivity.this,
+                        DisplayActivity.class);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                i.putExtra("action", "sleep");
+                startActivity(i);
+            }
+        });
+        deviceRow.addView(sleepNowButton, sleepNowParams);
         panelSystem.addView(deviceRow, deviceRowParams);
 
         main.addView(panelSystem);
@@ -442,7 +475,7 @@ public class SettingsActivity extends Activity {
         if (allowSleepCheck != null) allowSleepCheck.setChecked(ApiPrefs.isAllowSleep(this));
         if (fileLoggingCheck != null) fileLoggingCheck.setChecked(ApiPrefs.isFileLoggingEnabled(this));
         if (giftModeCheck != null) giftModeCheck.setChecked(ApiPrefs.isGiftModeEnabled(this));
-        if (sleepHint != null) sleepHint.setVisibility(allowSleepCheck.isChecked() ? View.VISIBLE : View.GONE);
+        if (sleepHint != null) sleepHint.setVisibility(View.VISIBLE);
         if (giftSettingsButton != null && giftModeCheck != null) {
             giftSettingsButton.setVisibility(giftModeCheck.isChecked() ? View.VISIBLE : View.GONE);
         }
@@ -459,6 +492,7 @@ public class SettingsActivity extends Activity {
 
     private void saveDisplayPrefs() {
         if (allowSleepCheck != null) ApiPrefs.setAllowSleep(this, allowSleepCheck.isChecked());
+        ApiPrefs.setSuperSleep(this, allowSleepCheck != null && allowSleepCheck.isChecked() && superSleepCheck != null && superSleepCheck.isChecked());
         if (fileLoggingCheck != null) {
             boolean enabled = fileLoggingCheck.isChecked();
             ApiPrefs.setFileLoggingEnabled(this, enabled);

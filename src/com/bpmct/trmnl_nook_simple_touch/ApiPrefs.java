@@ -20,6 +20,7 @@ public class ApiPrefs {
     private static final String KEY_ALLOW_HTTP = "allow_http";
     private static final String KEY_ALLOW_SELF_SIGNED_CERTS = "allow_self_signed_certs";
     private static final String KEY_AUTO_DISABLE_WIFI = "auto_disable_wifi";
+    private static final String KEY_SUPER_SLEEP = "super_sleep";
     private static final String KEY_SCREENSAVER_WRITTEN = "screensaver_written_once";
     private static final String SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
 
@@ -223,6 +224,17 @@ public class ApiPrefs {
     public static void setAutoDisableWifi(Context context, boolean enabled) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(KEY_AUTO_DISABLE_WIFI, enabled).commit();
+    }
+
+    /** Whether to sleep immediately after a new image loads (timer/alarm fetches only). Default false. */
+    public static boolean isSuperSleep(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_SUPER_SLEEP, false);
+    }
+
+    public static void setSuperSleep(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_SUPER_SLEEP, enabled).commit();
     }
 
     /** Whether the initial screensaver has been written to disk at least once. */

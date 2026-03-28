@@ -55,7 +55,7 @@ public class DisplayActivity extends Activity {
     /** When true, skip API and show generic on screen (for testing). When false, foreground = API image, screensaver file = generic. */
     private static final boolean USE_GENERIC_IMAGE = false;
     /** Delay after showing API image before writing screensaver and going to sleep (show picture, then screensaver, then sleep full interval). */
-    private static final long SCREENSAVER_DELAY_MS = 5 * 1000;
+    private static final long SCREENSAVER_DELAY_MS = 2 * 1000;
     private TextView contentView;
     private TextView logView;
     private ImageView imageView;
@@ -92,6 +92,9 @@ public class DisplayActivity extends Activity {
     private BroadcastReceiver alarmReceiver;
     private BroadcastReceiver connectivityReceiver;
     private Runnable pendingSleepRunnable;
+    private Runnable pendingScreenOffRunnable;
+    /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON. */
+    private volatile boolean sleepPending = false;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
     private static final long CONNECTIVITY_MAX_WAIT_MS = 30 * 1000;
@@ -371,7 +374,18 @@ public class DisplayActivity extends Activity {
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setKeepScreenAwake(true);
+        if (!sleepPending) {
+            setKeepScreenAwake(true);
+            // Restore screen timeout to normal (in case sleep button set it to 1s)
+            try {
+                android.provider.Settings.System.putInt(
+                    getContentResolver(),
+                    android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                    120000);
+            } catch (Throwable t) { /* ignore */ }
+        } else {
+            logD("onResume: sleepPending=true, skipping setKeepScreenAwake");
+        }
 
         boolean wifiJustOn = ensureWifiOnWhenForeground();
 
@@ -529,6 +543,12 @@ public class DisplayActivity extends Activity {
             if (logView != null) logView.setVisibility(View.VISIBLE);
             intent.removeExtra(EXTRA_CLEAR_IMAGE);
         }
+        if ("sleep".equals(intent.getStringExtra("action"))) {
+            intent.removeExtra("action");
+            refreshHandler.post(new Runnable() {
+                public void run() { sleepNow(); }
+            });
+        }
     }
 
     @Override
@@ -541,6 +561,8 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingSleepRunnable);
             pendingSleepRunnable = null;
         }
+        // Don't cancel pendingScreenOffRunnable on pause — it needs to fire
+        // even after the menu-dismiss causes a brief onPause/onResume cycle.
         if (pendingWifiWarmupRunnable != null) {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
             pendingWifiWarmupRunnable = null;
@@ -1120,7 +1142,7 @@ public class DisplayActivity extends Activity {
         forceFullRefresh();
     }
 
-    /** Restore dialog to Battery / Next / Settings. */
+    /** Restore dialog to Battery / Next / Settings / Sleep. */
     private void showMenuNormal() {
         if (loadingStatusView != null) loadingStatusView.setVisibility(View.GONE);
         if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
@@ -1196,6 +1218,93 @@ public class DisplayActivity extends Activity {
                 forceFullRefresh();
             }
         }, 120);
+    }
+
+    /**
+     * Immediately put the device into sleep-ready state: cancel any pending sleep/refresh
+     * runnables, write the current screensaver image, schedule the next alarm, clear
+     * FLAG_KEEP_SCREEN_ON (so the NOOK can blank), and optionally turn WiFi off.
+     *
+     * This is safe to call regardless of the allow_sleep setting — the Sleep button
+     * does an immediate sleep rather than going through scheduleScreensaverThenSleep()
+     * so FLAG_KEEP_SCREEN_ON never blocks us.
+     */
+    private void sleepNow() {
+        logD("sleepNow: initiating manual sleep");
+
+        // Cancel any existing scheduled sleep / refresh so they don't race
+        if (pendingSleepRunnable != null) {
+            refreshHandler.removeCallbacks(pendingSleepRunnable);
+            pendingSleepRunnable = null;
+            logD("sleepNow: cancelled pending sleepRunnable");
+        }
+        if (refreshRunnable != null) {
+            refreshHandler.removeCallbacks(refreshRunnable);
+            logD("sleepNow: cancelled pending refreshRunnable");
+        }
+        cancelConnectivityWait();
+
+        // Write the current API image (or generic fallback) as screensaver so the
+        // NOOK shows something while asleep.
+        if (lastDisplayedImage != null) {
+            logD("sleepNow: writing last displayed image as screensaver");
+            writeScreenshotToScreensaver(lastDisplayedImage);
+        } else {
+            logD("sleepNow: no API image yet, writing generic screensaver");
+            writeGenericScreensaver();
+        }
+
+        // Schedule wake alarm so the next refresh fires on time.
+        // Use the current refreshMs minus the standard screensaver delay that was
+        // already skipped (we slept early), but never go negative.
+        long sleepMs = refreshMs - SCREENSAVER_DELAY_MS - WIFI_WARMUP_MS;
+        if (sleepMs < 0) sleepMs = 0;
+        long wakeTime = scheduleReload(sleepMs);
+        logD("sleepNow: alarm scheduled in " + (sleepMs / 1000L) + "s (wake at " + wakeTime + ")");
+
+        // Turn WiFi off to save power (same as the normal sleep path).
+        if (ApiPrefs.isAutoDisableWifi(this)) {
+            WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null && wifi.isWifiEnabled()) {
+                wifi.setWifiEnabled(false);
+                logD("sleepNow: WiFi disabled");
+            } else {
+                logD("sleepNow: WiFi already off or unavailable");
+            }
+        } else {
+            logD("sleepNow: auto-disable WiFi is OFF, leaving WiFi on");
+        }
+
+        // Clear FLAG_KEEP_SCREEN_ON so the window manager stops keeping the screen on.
+        logD("sleepNow: clearing keep-screen-awake flag");
+        setKeepScreenAwake(false);
+
+        // Delay KEYCODE_POWER by 5s — gives the menu time to dismiss and the
+        // user's finger time to lift. sleepPending blocks onResume from
+        // re-asserting FLAG_KEEP_SCREEN_ON during this window.
+        sleepPending = true;
+        if (pendingScreenOffRunnable != null) {
+            refreshHandler.removeCallbacks(pendingScreenOffRunnable);
+        }
+        pendingScreenOffRunnable = new Runnable() {
+            public void run() {
+                pendingScreenOffRunnable = null;
+                sleepPending = false;
+                logD("sleepNow: setting screen_off_timeout=1000 to force natural sleep");
+                try {
+                    android.provider.Settings.System.putInt(
+                        getContentResolver(),
+                        android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                        1000);
+                    logD("sleepNow: screen_off_timeout set to 1s");
+                } catch (Throwable t) {
+                    logW("sleepNow: could not set timeout: " + t);
+                }
+                logD("sleepNow: done");
+            }
+        };
+        refreshHandler.postDelayed(pendingScreenOffRunnable, 2000);
+        logD("sleepNow: setup complete, screen-off in 5s (sleepPending=true)");
     }
 
     private void flashEinkTransition() {
@@ -1486,7 +1595,16 @@ public class DisplayActivity extends Activity {
                     a.forceFullRefresh();
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                    a.scheduleNextCycle();
+                    // Super Sleep: if enabled and this was a background (timer/alarm) fetch, sleep immediately
+                    if (ApiPrefs.isSuperSleep(a)
+                            && ApiPrefs.isAllowSleep(a)
+                            && !fromMenu
+                            && ("timer".equals(a.fetchReason) || "alarm".equals(a.fetchReason))) {
+                        a.logD("super sleep: sleeping immediately after image load");
+                        a.sleepNow();
+                    } else {
+                        a.scheduleNextCycle();
+                    }
                     int pct = getBatteryPercent(a);
                     if (pct >= 0) a.logD("Percent-Charged: " + pct);
                     int rssi = getWifiRssi(a);

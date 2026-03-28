@@ -1301,19 +1301,17 @@ public class DisplayActivity extends Activity {
             public void run() {
                 pendingScreenOffRunnable = null;
                 sleepPending = false;
-                logD("sleepNow: writing mem to /sys/power/state to force screen off");
+                logD("sleepNow: calling PowerManager.goToSleep()");
                 try {
-                    Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", "echo mem > /sys/power/state"});
-                    logD("sleepNow: /sys/power/state=mem ok");
-                } catch (Throwable t) {
-                    logW("sleepNow: /sys/power/state failed: " + t);
-                    // Fallback: try input keyevent 26
-                    try {
-                        Runtime.getRuntime().exec(new String[]{"input", "keyevent", "26"});
-                        logD("sleepNow: KEYCODE_POWER fallback ok");
-                    } catch (Throwable t2) {
-                        logW("sleepNow: KEYCODE_POWER fallback also failed: " + t2);
+                    PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                    if (pm != null) {
+                        pm.goToSleep(SystemClock.uptimeMillis());
+                        logD("sleepNow: goToSleep() called ok");
+                    } else {
+                        logW("sleepNow: PowerManager is null");
                     }
+                } catch (Throwable t) {
+                    logW("sleepNow: goToSleep() failed: " + t);
                 }
                 logD("sleepNow: done");
             }

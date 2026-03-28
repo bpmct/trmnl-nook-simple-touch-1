@@ -398,6 +398,13 @@ public class DisplayActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (!sleepPending) {
             setKeepScreenAwake(true);
+            // Restore screen timeout to normal (in case sleep button set it to 1s)
+            try {
+                android.provider.Settings.System.putInt(
+                    getContentResolver(),
+                    android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                    120000);
+            } catch (Throwable t) { /* ignore */ }
         } else {
             logD("onResume: sleepPending=true, skipping setKeepScreenAwake");
         }
@@ -1301,14 +1308,15 @@ public class DisplayActivity extends Activity {
             public void run() {
                 pendingScreenOffRunnable = null;
                 sleepPending = false;
-                logD("sleepNow: running su to write mem > /sys/power/state");
+                logD("sleepNow: setting screen_off_timeout=1000 to force natural sleep");
                 try {
-                    Process p = Runtime.getRuntime().exec(
-                        new String[]{"/system/bin/su", "-c", "echo mem > /sys/power/state"});
-                    int exit = p.waitFor();
-                    logD("sleepNow: su exit=" + exit);
+                    android.provider.Settings.System.putInt(
+                        getContentResolver(),
+                        android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                        1000);
+                    logD("sleepNow: screen_off_timeout set to 1s");
                 } catch (Throwable t) {
-                    logW("sleepNow: su failed: " + t);
+                    logW("sleepNow: could not set timeout: " + t);
                 }
                 logD("sleepNow: done");
             }

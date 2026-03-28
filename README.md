@@ -18,6 +18,7 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 - [Install](#install)
 - [Device Settings](#device-settings)
 - [Features](#features)
+- [Sleep Button](#sleep-button)
 - [Deep Sleep Mode](#deep-sleep-mode)
 - [Frames and Cases](#frames-and-cases)
 - [Gift Mode](#gift-mode)
@@ -52,7 +53,40 @@ In the TRMNL Device settings, set the device type to "Nook Simple Touch" as the 
 - BYOD support for TRMNL and custom server URLs
 - Reports battery voltage and Wi-Fi signal strength
 - Deep sleep mode for 30+ day battery life
+- Manual sleep button in the tap menu
 - Gift Mode for pre-configuring devices as gifts
+
+## Sleep Button
+
+The tap menu (shown when you tap the screen) includes a **Sleep** button alongside Battery, Next, and Settings.
+
+Tapping Sleep immediately puts the device to sleep the same way the physical power button does — the NOOK screensaver is shown and the device can be woken with the home or power button.
+
+### How it works
+
+Forcing the screen off on Android 2.3 (API 10) from a normal (non-system) app is non-trivial:
+
+| Approach | Why it doesn't work |
+|---|---|
+| `PowerManager.goToSleep()` | Requires `DEVICE_POWER` — a system-only permission, not grantable to third-party apps even on rooted devices |
+| `KEYCODE_POWER` via `input keyevent 26` | No-op on NOOK firmware; power key is handled at kernel level |
+| `sendevent /dev/input/event1 1 116 1` | Also no-op; kernel intercepts before Android sees it |
+| `echo mem > /sys/power/state` via `su` | Raw kernel suspend — bypasses Android power manager entirely, so no screensaver renders and wake behavior is broken |
+| `service call power 2 i32 <uptime> i32 0` via `su` | The Superuser dialog causes user activity that resets the power timer; timestamp is stale by the time `su` executes |
+
+**What actually works:** `WRITE_SETTINGS` + screen timeout trick.
+
+`android.permission.WRITE_SETTINGS` is a normal permission any app can hold. The sleep sequence is:
+
+1. Write the TRMNL screensaver image to `/media/screensavers/TRMNL/display.png`
+2. Schedule a wake alarm for the next refresh cycle
+3. Turn off WiFi (if auto-disable is enabled)
+4. Remove `FLAG_KEEP_SCREEN_ON` from the window
+5. Set `Settings.System.SCREEN_OFF_TIMEOUT` to **1000 ms** (1 second)
+6. The Android power manager fires its natural screen-off path within ~1 second — this goes through the full NOOK EPD screensaver pipeline, same as the physical power button
+7. On wake, `onResume` restores `SCREEN_OFF_TIMEOUT` to 120 seconds and re-asserts `FLAG_KEEP_SCREEN_ON`
+
+A `sleepPending` flag blocks `onResume` from re-asserting keep-awake during the brief pause/resume cycle caused by the tap menu dismissing.
 
 ## Deep Sleep Mode
 

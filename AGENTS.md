@@ -85,3 +85,8 @@ docker exec <container_id> bash -c "<command>"
 ## Worktrees
 
 Active development happens in the worktree at `/home/coder/trmnl-nook-sleep` on branch `feature/tap-menu-sleep`. The main checkout is at `/home/coder/trmnl-nook-simple-touch`.
+
+> **CRITICAL for agents:** The devcontainer mounts `/home/coder/trmnl-nook-sleep` as `/workspace`.
+> All source edits MUST be made to files under `/home/coder/trmnl-nook-sleep/` (the worktree).
+> Editing `/home/coder/trmnl-nook-simple-touch/` (the main checkout) has NO effect on builds.
+> Always verify with: `docker inspect <container_id> --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`

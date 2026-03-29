@@ -77,7 +77,7 @@ You can also trigger a manual sleep at any time from Settings → System → "Sl
 
 ## Frames and Cases
 
-The Nook Simple Touch often develops sticky residue on its rubberized surfaces as it ages. [iFixit](https://www.ifixit.com/Device/Barnes_%26_Noble_Nook_Simple_Touch) has great teardown and repair guides if you need to clean or refurbish your device.
+The Nook Simple Touch often develops sticky residue on its rubberized surfaces as it ages. [iFixit](https://www.ifixit.com/Device/Nook_BNRV300) has great teardown and repair guides if you need to clean or refurbish your device.
 
 <img src="images/frame-comparison.jpg" alt="3D-printed frame (left) vs original case (right)" width="500">
 

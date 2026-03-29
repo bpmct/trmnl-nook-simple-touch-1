@@ -573,7 +573,11 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
             pendingWifiWarmupRunnable = null;
         }
-        cancelConnectivityWait();
+        // Only cancel connectivity wait if no fetch is in progress — otherwise
+        // a menu dismiss (onPause/onResume) would kill a "Connecting..." wait mid-fetch.
+        if (!fetchInProgress) {
+            cancelConnectivityWait();
+        }
     }
 
     @Override

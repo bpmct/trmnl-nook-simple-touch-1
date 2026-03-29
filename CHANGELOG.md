@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.12.2] - 2026-03-29
+
+### Fixed
+- **Menu → Next no longer gets stuck on "Connecting..."** - Opening the menu and tapping Next was cancelling the WiFi connectivity wait mid-fetch.
+
+---
+
 ## [v0.12.1] - 2026-03-29
 
 ### Fixed

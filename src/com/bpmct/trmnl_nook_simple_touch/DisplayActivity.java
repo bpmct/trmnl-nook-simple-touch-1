@@ -93,7 +93,8 @@ public class DisplayActivity extends Activity {
     private BroadcastReceiver connectivityReceiver;
     private Runnable pendingSleepRunnable;
     private Runnable pendingScreenOffRunnable;
-    /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON. */
+    /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON
+     * and restoring the 120s screen timeout until the device actually wakes. */
     private volatile boolean sleepPending = false;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
@@ -374,18 +375,14 @@ public class DisplayActivity extends Activity {
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        if (!sleepPending) {
-            setKeepScreenAwake(true);
-            // Restore screen timeout to normal (in case sleep button set it to 1s)
-            try {
-                android.provider.Settings.System.putInt(
-                    getContentResolver(),
-                    android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
-                    120000);
-            } catch (Throwable t) { /* ignore */ }
-        } else {
-            logD("onResume: sleepPending=true, skipping setKeepScreenAwake");
-        }
+        sleepPending = false;
+        try {
+            android.provider.Settings.System.putInt(
+                getContentResolver(),
+                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                120000);
+        } catch (Throwable t) { /* ignore */ }
+        setKeepScreenAwake(true);
 
         boolean wifiJustOn = ensureWifiOnWhenForeground();
 
@@ -1289,7 +1286,7 @@ public class DisplayActivity extends Activity {
         pendingScreenOffRunnable = new Runnable() {
             public void run() {
                 pendingScreenOffRunnable = null;
-                sleepPending = false;
+                // NOTE: sleepPending stays true until onResume() after the real wake.
                 logD("sleepNow: setting screen_off_timeout=1000 to force natural sleep");
                 try {
                     android.provider.Settings.System.putInt(
@@ -1595,11 +1592,12 @@ public class DisplayActivity extends Activity {
                     a.forceFullRefresh();
                     a.logD("displayed image");
                     a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                    // Super Sleep: if enabled and this was a background (timer/alarm) fetch, sleep immediately
-                    if (ApiPrefs.isSuperSleep(a)
-                            && ApiPrefs.isAllowSleep(a)
-                            && !fromMenu
-                            && ("timer".equals(a.fetchReason) || "alarm".equals(a.fetchReason))) {
+                    // Super Sleep: sleep immediately after every background image render.
+                    // Skip only if user tapped Next from the menu.
+                    boolean superSleep = ApiPrefs.isSuperSleep(a);
+                    boolean allowSleep = ApiPrefs.isAllowSleep(a);
+                    a.logD("super-sleep check: superSleep=" + superSleep + " allowSleep=" + allowSleep + " fromMenu=" + fromMenu);
+                    if (superSleep && allowSleep && !fromMenu) {
                         a.logD("super sleep: sleeping immediately after image load");
                         a.sleepNow();
                     } else {

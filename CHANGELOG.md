@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.12.1] - 2026-03-29
+
+### Fixed
+- **Aggressive sleep wake cycles no longer flash the log screen.** The app now renders the new image before sleeping, so you see the image instead of status text.
+- Screen timeout is always restored if you navigate away or the app exits mid-sleep.
+
+---
+
 ## [v0.12.0] - 2026-03-29
 
 ### Fixed

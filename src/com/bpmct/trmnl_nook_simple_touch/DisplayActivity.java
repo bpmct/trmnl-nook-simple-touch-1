@@ -551,6 +551,13 @@ public class DisplayActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        // Restore screen timeout whenever we leave — user is navigating around the device.
+        try {
+            android.provider.Settings.System.putInt(
+                getContentResolver(),
+                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                120000);
+        } catch (Throwable t) { /* ignore */ }
         if (refreshRunnable != null) {
             refreshHandler.removeCallbacks(refreshRunnable);
         }
@@ -558,8 +565,10 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingSleepRunnable);
             pendingSleepRunnable = null;
         }
-        // Don't cancel pendingScreenOffRunnable on pause — it needs to fire
-        // even after the menu-dismiss causes a brief onPause/onResume cycle.
+        if (pendingScreenOffRunnable != null) {
+            refreshHandler.removeCallbacks(pendingScreenOffRunnable);
+            pendingScreenOffRunnable = null;
+        }
         if (pendingWifiWarmupRunnable != null) {
             refreshHandler.removeCallbacks(pendingWifiWarmupRunnable);
             pendingWifiWarmupRunnable = null;
@@ -570,6 +579,13 @@ public class DisplayActivity extends Activity {
     @Override
     protected void onDestroy() {
         cancelConnectivityWait();
+        // Safety net: always restore screen timeout in case the app dies before onResume
+        try {
+            android.provider.Settings.System.putInt(
+                getContentResolver(),
+                android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                120000);
+        } catch (Throwable t) { /* ignore */ }
         try {
             if (alarmReceiver != null) {
                 unregisterReceiver(alarmReceiver);
@@ -785,8 +801,15 @@ public class DisplayActivity extends Activity {
         }
         fetchInProgress = true;
         fetchStartedFromMenu = menuVisible;
-        setBootStatus("Fetching...");
-        appendLogLine("Fetching...");
+        // Silent background fetch when aggressive sleep is on — no boot status,
+        // no log churn, screen stays dark/on screensaver until the new image renders.
+        boolean silentFetch = ApiPrefs.isSuperSleep(this)
+                && ApiPrefs.isAllowSleep(this)
+                && !menuVisible;
+        if (!silentFetch) {
+            setBootStatus("Fetching...");
+            appendLogLine("Fetching...");
+        }
         // Only show Loading in the dialog when user tapped Next. Resume/alarm wake: keep previous display, fetch in background.
         if (menuVisible) {
             showMenuStatus("Loading...", false);
@@ -1577,30 +1600,27 @@ public class DisplayActivity extends Activity {
                     a.lastDisplayedImage = ar.bitmap;
                     // Always write screensaver immediately so TRMNL appears in NOOK's screensaver list
                     a.writeScreenshotToScreensaver(ar.bitmap);
-                    a.imageView.setVisibility(View.VISIBLE);
-                    if (a.imageRotateLayout != null) a.imageRotateLayout.setVisibility(View.VISIBLE);
-                    if (a.contentScroll != null) {
-                        a.contentScroll.setVisibility(View.GONE);
-                    }
-                    if (a.logView != null) {
-                        a.logView.setVisibility(View.GONE);
-                    }
-                    a.hideMenu();
-                    if (ar.imageUrl != null) {
-                        a.logD("image url: " + ar.imageUrl);
-                    }
-                    a.forceFullRefresh();
-                    a.logD("displayed image");
-                    a.logD("next display in " + (a.refreshMs / 1000L) + "s");
-                    // Super Sleep: sleep immediately after every background image render.
-                    // Skip only if user tapped Next from the menu.
                     boolean superSleep = ApiPrefs.isSuperSleep(a);
                     boolean allowSleep = ApiPrefs.isAllowSleep(a);
                     a.logD("super-sleep check: superSleep=" + superSleep + " allowSleep=" + allowSleep + " fromMenu=" + fromMenu);
+                    // Always render the image in-app — hides the boot/log UI
+                    // and ensures errors still surface via the normal error path.
+                    a.imageView.setVisibility(View.VISIBLE);
+                    if (a.imageRotateLayout != null) a.imageRotateLayout.setVisibility(View.VISIBLE);
+                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.GONE);
+                    if (a.logView != null) a.logView.setVisibility(View.GONE);
+                    a.hideMenu();
+                    if (ar.imageUrl != null) a.logD("image url: " + ar.imageUrl);
+                    a.logD("displayed image");
                     if (superSleep && allowSleep && !fromMenu) {
-                        a.logD("super sleep: sleeping immediately after image load");
+                        // Aggressive sleep: image is visible, screensaver already written.
+                        // Sleep immediately — no forceFullRefresh, no scheduleNextCycle.
+                        // The NOOK screensaver renders the single EPD flash on timeout.
+                        a.logD("super sleep: sleeping after image render");
                         a.sleepNow();
                     } else {
+                        a.logD("next display in " + (a.refreshMs / 1000L) + "s");
+                        a.forceFullRefresh();
                         a.scheduleNextCycle();
                     }
                     int pct = getBatteryPercent(a);

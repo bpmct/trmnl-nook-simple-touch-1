@@ -16,6 +16,8 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 
 - [Prerequisites](#prerequisites)
 - [Install](#install)
+  - [Easy Setup via nooks.bpmct.net](#easy-setup-via-nooksbpmctnet-recommended)
+  - [Manual Setup](#manual-setup)
 - [Device Settings](#device-settings)
 - [Features](#features)
 - [Deep Sleep Mode](#deep-sleep-mode)
@@ -32,17 +34,57 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 - Buy a [TRMNL BYOD license](https://shop.usetrmnl.com/collections/frontpage/products/byod) and grab your SSID + API key from Developer Settings after login (or use your own server).
 
 ## Install
-- Download the APK from [GitHub Releases](https://github.com/bpmct/trmnl-nook-simple-touch/releases).
-- Connect the Nook Simple Touch over USB and copy the APK over.
-- Open the included `ES File Explorer` app.
-- In ES File Explorer: `Favorites -> "/" -> "media" -> "My Files".`
-- Tap the APK and install.
-- Connect your device to WiFi
-- Open the app and configure the device info
+
+### Easy Setup via nooks.bpmct.net (recommended)
+
+**[nooks.bpmct.net/manage/](https://nooks.bpmct.net/manage/)** is a browser-based setup wizard that installs the app and configures your NOOK over USB — no ADB installation required.
+
+> **Requires Chrome or Edge.** WebUSB is not supported in Firefox or Safari.
+
+[![nooks.bpmct.net setup wizard](images/nooks-webapp.png)](https://nooks.bpmct.net/manage/)
+
+The wizard walks you through five steps:
+
+1. **Connect** — Plug in your NOOK via USB and click "Connect Device" to authorize it in the browser
+2. **Checking** — Automatically checks the app version and device settings, offering to install or update as needed
+3. **Configure** — Enter your TRMNL MAC address and API key (or self-hosted server URL)
+4. **WiFi** — Scan for and connect to a WiFi network
+5. **Done** — Your NOOK is ready
+
+The webapp configures all required device settings automatically, including those listed in [Device Settings](#device-settings) below.
+
+---
+
+### Manual Setup
+
+1. Download the APK from [GitHub Releases](https://github.com/bpmct/trmnl-nook-simple-touch/releases).
+2. Connect the Nook Simple Touch over USB and copy the APK over.
+3. Open the included `ES File Explorer` app.
+4. In ES File Explorer: `Favorites -> "/" -> "media" -> "My Files".`
+5. Tap the APK and install.
+6. Connect your device to WiFi.
+7. Open the app and configure the device info.
+
+After installing manually, you'll also need to configure [Device Settings](#device-settings).
 
 ## Device Settings
 
 In the TRMNL Device settings, set the device type to "Nook Simple Touch" as the TRMNL team was nice enough to add support for this device!
+
+The app and [nooks.bpmct.net](https://nooks.bpmct.net/manage/) both configure several Android system settings for the best experience. These are applied automatically by the setup wizard, but if you're setting up manually, here's what they do:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| Screensaver directory | `/media/screensavers/TRMNL` | Points the NOOK's native screensaver at the TRMNL image |
+| Screen timeout | 2 minutes | Required for deep sleep / screensaver to activate reliably |
+| Hide screensaver banner | Enabled | Hides the text overlay on the screensaver (NMM mod) |
+| Disable drag to unlock | Enabled | Skips the drag-to-unlock gesture on screensaver wake (NMM mod) |
+| Sleep between updates | Enabled | Enables deep sleep between refresh cycles |
+| Aggressive sleep | Enabled | Sleeps immediately after each refresh rather than waiting for timeout |
+| **Home button (short press)** | Launches TRMNL app | *(Optional)* Remaps the physical Home button to open TRMNL directly |
+| **Home button (long press)** | Opens App Drawer | *(Optional)* Remaps long-press Home to the app drawer |
+
+> **Note:** The Home button short press and long press remapping require [Nook Mod Manager (NMM)](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) to be installed (included in Phoenix Project phase 4). These are optional — the app works without them. If NMM is not installed, these settings have no effect.
 
 ## Features
 

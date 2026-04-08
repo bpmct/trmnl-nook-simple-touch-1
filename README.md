@@ -37,11 +37,9 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 
 ### Easy Setup (recommended)
 
-Use [my Nooks web tool](https://nooks.bpmct.net/manage/) — a browser-based setup wizard that installs the app and configures your NOOK over USB — no ADB installation required.
+I built [a web tool](https://nooks.bpmct.net/manage/) that handles the whole setup over USB — installs the app, configures settings, and gets you on WiFi, all from the browser. No ADB needed.
 
-> **Requires Chrome or Edge.** WebUSB is not supported in Firefox or Safari.
-
-> **Prerequisites:** Your NOOK must be rooted first — see [Prerequisites](#prerequisites) above. Rooting via the [Phoenix Project](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) (phase 4) and [ClockworkMod recovery](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) is required before the web tool can connect.
+> Requires Chrome or Edge (WebUSB). Your NOOK must be rooted first via the [Phoenix Project](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) phase 4 before it'll show up.
 
 [![nooks.bpmct.net setup wizard](images/nooks-webapp.png)](https://nooks.bpmct.net/manage/)
 

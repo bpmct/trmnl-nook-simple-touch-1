@@ -73,20 +73,20 @@ After installing manually, you'll also need to configure [Device Settings](#devi
 
 In the TRMNL Device settings, set the device type to "Nook Simple Touch" as the TRMNL team was nice enough to add support for this device!
 
-The app and the [web tool](https://nooks.bpmct.net/manage/) both configure several Android system settings for the best experience. These are applied automatically by the setup wizard, but if you're setting up manually, here's what they do:
+The [web tool](https://nooks.bpmct.net/manage/) applies all of the settings below automatically. If you installed manually, configure each one by hand:
 
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| Screensaver directory | `/media/screensavers/TRMNL` | Points the NOOK's native screensaver at the TRMNL image |
-| Screen timeout | 2 minutes | Required for deep sleep / screensaver to activate reliably |
-| Hide screensaver banner | Enabled | Hides the text overlay on the screensaver (NMM mod) |
-| Disable drag to unlock | Enabled | Skips the drag-to-unlock gesture on screensaver wake (NMM mod) |
-| Sleep between updates | Enabled | Enables deep sleep between refresh cycles |
-| Aggressive sleep | Enabled | Sleeps immediately after each refresh rather than waiting for timeout |
-| **Home button (short press)** | Launches TRMNL app | *(Optional)* Remaps the physical Home button to open TRMNL directly |
-| **Home button (long press)** | Opens App Drawer | *(Optional)* Remaps long-press Home to the app drawer |
+| Setting | Value | Where to set it | Purpose |
+|---------|-------|-----------------|----------|
+| Screensaver directory | `TRMNL` | `Nook Settings → Display → Screensaver` | Points the NOOK's native screensaver at the TRMNL image |
+| Screen timeout | 2 minutes | `Nook Settings → Display → Screensaver` | Required for deep sleep / screensaver to activate reliably |
+| Hide screensaver banner | Enabled | `Apps → Nook Touch Mod` | Hides the text overlay on the screensaver |
+| Disable drag to unlock | Enabled | `Apps → Nook Touch Mod` | Skips the drag-to-unlock gesture on screensaver wake |
+| Sleep between updates | Enabled | TRMNL app → Settings → General | Enables deep sleep between refresh cycles |
+| Aggressive sleep | Enabled | TRMNL app → Settings → General | Sleeps immediately after each refresh rather than waiting for timeout |
+| **Home button (short press)** | Launches TRMNL app | `Apps → Nook Touch Mod` *(optional)* | Remaps the physical Home button to open TRMNL directly |
+| **Home button (long press)** | Opens App Drawer | `Apps → Nook Touch Mod` *(optional)* | Remaps long-press Home to the app drawer |
 
-> **Note:** The Home button short press and long press remapping require [Nook Mod Manager (NMM)](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) to be installed (included in Phoenix Project phase 4). These are optional — the app works without them. If NMM is not installed, these settings have no effect.
+> **Note:** Nook Touch Mod settings require [Nook Mod Manager (NMM)](https://xdaforums.com/t/nst-g-the-phoenix-project.4673934/) to be installed (included in Phoenix Project phase 4). The Home button remapping rows are optional — the app works without them.
 
 ## Features
 

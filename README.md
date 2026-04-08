@@ -37,7 +37,7 @@ Questions or feedback? Please [open an issue](https://github.com/bpmct/trmnl-noo
 
 ### Easy Setup (recommended)
 
-The [web tool](https://nooks.bpmct.net/manage/) is a browser-based setup wizard that installs the app and configures your NOOK over USB — no ADB installation required.
+Use [my Nooks web tool](https://nooks.bpmct.net/manage/) — a browser-based setup wizard that installs the app and configures your NOOK over USB — no ADB installation required.
 
 > **Requires Chrome or Edge.** WebUSB is not supported in Firefox or Safari.
 

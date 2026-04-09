@@ -46,9 +46,9 @@ I built [a web tool](https://nooks.bpmct.net/manage/) that handles the whole set
 The wizard walks you through five steps:
 
 1. **Connect** — Plug in your NOOK via USB, then click "Connect Device" to open the browser's USB picker. If prompted on the NOOK screen, tap *Allow* to authorize the connection.
-2. **Checking** — Reads your device model, verifies the TRMNL app is installed (installing or updating it if needed), and applies any missing system settings automatically.
-3. **Configure TRMNL** — Sign up at trmnl.com, then enter the MAC address and Device API Key from your device's Developer Perks page. Self-hosted (BYOS) and gift mode are available under advanced options.
-4. **WiFi Setup** — If your NOOK is already on a network, this step confirms the connection and moves on. Otherwise, it scans for nearby networks and writes the credentials directly to the device.
+2. **Setup** — Reads your device model, verifies the TRMNL app is installed (installing or updating it if needed), and applies any missing system settings automatically.
+3. **TRMNL** — Sign up at trmnl.com, then enter the MAC address and Device API Key from your device's Developer Perks page. Self-hosted (BYOS) and gift mode are available under advanced options.
+4. **Network** — If your NOOK is already on a network, this step confirms the connection and moves on. Otherwise, it scans for nearby networks and writes the credentials directly to the device.
 5. **Done** — Your NOOK is ready. Unplug the USB cable and manage plugins and settings at trmnl.com.
 
 The web tool configures all required device settings automatically, including those listed in [Device Settings](#device-settings) below.

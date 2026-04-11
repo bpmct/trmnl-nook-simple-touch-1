@@ -63,10 +63,12 @@ public class DisplayActivity extends Activity {
     private static final long DEFAULT_REFRESH_MS = 15 * 60 * 1000;
     private static final String API_DISPLAY_PATH = "/display";
     private static final String ALARM_REFRESH_ACTION = "com.bpmct.trmnl_nook_simple_touch.ALARM_REFRESH_ACTION";
+    private static final int MAX_WIFI_RECOVERY_ATTEMPTS = 2;
     /** When true, skip API and show generic on screen (for testing). When false, foreground = API image, screensaver file = generic. */
     private static final boolean USE_GENERIC_IMAGE = false;
     /** Delay after showing API image before writing screensaver and going to sleep (show picture, then screensaver, then sleep full interval). */
     private static final long SCREENSAVER_DELAY_MS = 2 * 1000;
+    private static final long WIFI_RECOVERY_TOGGLE_DELAY_MS = 2 * 1000;
     private TextView contentView;
     private TextView logView;
     private ImageView imageView;
@@ -115,9 +117,11 @@ public class DisplayActivity extends Activity {
     /** True while sleepNow() is armed — blocks onResume from re-asserting FLAG_KEEP_SCREEN_ON
      * and restoring the 120s screen timeout until the device actually wakes. */
     private volatile boolean sleepPending = false;
+    private Runnable pendingWifiRecoveryRunnable;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
     private static final long CONNECTIVITY_MAX_WAIT_MS = 5 * 1000;
+    private volatile int wifiRecoveryAttempts = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -567,6 +571,51 @@ public class DisplayActivity extends Activity {
         logD("fetch in " + (WIFI_WARMUP_MS / 1000L) + "s (wifi warming up)");
     }
 
+    private void cancelWifiRecovery() {
+        if (pendingWifiRecoveryRunnable != null) {
+            refreshHandler.removeCallbacks(pendingWifiRecoveryRunnable);
+            pendingWifiRecoveryRunnable = null;
+        }
+    }
+
+    private boolean attemptWifiRecovery(final String reason) {
+        final WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) {
+            logW("wifi recovery unavailable: wifi manager null");
+            return false;
+        }
+        if (wifiRecoveryAttempts >= MAX_WIFI_RECOVERY_ATTEMPTS) {
+            logW("wifi recovery exhausted after " + wifiRecoveryAttempts + " attempts");
+            return false;
+        }
+        cancelConnectivityWait();
+        cancelWifiRecovery();
+        wifiRecoveryAttempts++;
+        final int attempt = wifiRecoveryAttempts;
+        logW("wifi recovery attempt " + attempt + "/" + MAX_WIFI_RECOVERY_ATTEMPTS + " (" + reason + "), state=" + getWifiStateString());
+        try {
+            wifi.setWifiEnabled(false);
+            logD("wifi off for recovery");
+        } catch (Throwable t) {
+            logW("wifi off for recovery failed: " + t);
+        }
+        pendingWifiRecoveryRunnable = new Runnable() {
+            @Override
+            public void run() {
+                pendingWifiRecoveryRunnable = null;
+                try {
+                    wifi.setWifiEnabled(true);
+                    logD("wifi on for recovery");
+                } catch (Throwable t) {
+                    logW("wifi on for recovery failed: " + t);
+                }
+                waitForWifiThenFetch();
+            }
+        };
+        refreshHandler.postDelayed(pendingWifiRecoveryRunnable, WIFI_RECOVERY_TOGGLE_DELAY_MS);
+        return true;
+    }
+
     /** Wait for network to come up, then start fetch. Starts as soon as connectivity appears; max wait CONNECTIVITY_MAX_WAIT_MS. */
     private void waitForWifiThenFetch() {
         cancelConnectivityWait();
@@ -632,6 +681,10 @@ public class DisplayActivity extends Activity {
                 if (!isConnectedToNetwork(a)) {
                     logD("connectivity timeout (" + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s) wifi=" + a.getWifiStateString() + " — showing no-wifi screen");
                     cancelConnectivityWait();
+                    if (attemptWifiRecovery("connectivity timeout")) {
+                        return;
+                    }
+                    wifiRecoveryAttempts = 0;
                     a.showNoWifiScreen();
                     a.scheduleNextCycle();
                 }
@@ -997,6 +1050,8 @@ public class DisplayActivity extends Activity {
         if (fetchInProgress) {
             return;
         }
+        cancelWifiRecovery();
+        wifiRecoveryAttempts = 0;
         fetchInProgress = true;
         fetchStartedFromMenu = menuVisible;
         // Silent background fetch when aggressive sleep is on, or when running as a

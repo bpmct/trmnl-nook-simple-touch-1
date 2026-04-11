@@ -718,6 +718,23 @@ public class DisplayActivity extends Activity {
         return mobile != null && mobile.isConnected();
     }
 
+    /**
+     * Returns true if it is safe to attempt a fetch immediately:
+     * - ConnectivityManager reports connected (normal case), OR
+     * - WiFi is enabled and already has an IP address (handles the Android 2.1
+     *   race where isConnected() lags behind actual DHCP/association state).
+     *
+     * Only returns false if WiFi is off or has no IP — i.e. we genuinely need
+     * to wait before the network is usable.
+     */
+    private static boolean isWifiReadyOrConnected(Context context) {
+        if (isConnectedToNetwork(context)) return true;
+        WifiManager wm = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        if (wm == null || !wm.isWifiEnabled()) return false;
+        WifiInfo info = wm.getConnectionInfo();
+        return info != null && info.getIpAddress() != 0;
+    }
+
     /** Write bundled generic_display.jpg to screensaver path. Used as fallback when no API image has been displayed yet. */
     private void writeGenericScreensaver() {
         Bitmap b = null;
@@ -788,8 +805,12 @@ public class DisplayActivity extends Activity {
             refreshHandler.removeCallbacks(pendingSleepRunnable);
             pendingSleepRunnable = null;
         }
-        // Always wait for WiFi before attempting fetch
-        if (!isConnectedToNetwork(this)) {
+        // Only wait for WiFi if it's actually off or has no IP yet.
+        // If WiFi is enabled and has an IP, proceed directly — isConnectedToNetwork()
+        // can return false momentarily on Android 2.1 (DHCP state lag) even when the
+        // radio is fully associated, which would incorrectly send us into the 30s
+        // connectivity wait and trigger "Couldn't connect" for no real reason.
+        if (!isWifiReadyOrConnected(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
             if (wifi != null && !wifi.isWifiEnabled()) {
                 wifi.setWifiEnabled(true);

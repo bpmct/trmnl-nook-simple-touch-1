@@ -377,7 +377,9 @@ public class DisplayActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        logD("onResume pid=" + android.os.Process.myPid() + " fetchInProgress=" + fetchInProgress);
+        logD("onResume pid=" + android.os.Process.myPid()
+                + " fetchInProgress=" + fetchInProgress
+                + " wifi=" + getWifiStateString());
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -405,6 +407,8 @@ public class DisplayActivity extends Activity {
                 } else {
                     startFetch();
                 }
+            } else {
+                logD("onResume: fetch already in progress, skipping");
             }
             // Don't schedule here - fetch completion will schedule the next refresh
         }
@@ -771,7 +775,14 @@ public class DisplayActivity extends Activity {
         int lastSlash = dirPath.lastIndexOf('/');
         if (lastSlash >= 0) dirPath = dirPath.substring(0, lastSlash);
         try {
-            new File(dirPath).mkdirs();
+            File dir = new File(dirPath);
+            if (!dir.exists()) {
+                boolean created = dir.mkdirs();
+                if (!created) {
+                    logW("screensaver mkdir failed (skipping write): " + dirPath);
+                    return;
+                }
+            }
         } catch (Throwable t) {
             logW("screensaver mkdir: " + t);
         }
@@ -898,7 +909,8 @@ public class DisplayActivity extends Activity {
             };
         }
         refreshHandler.removeCallbacks(refreshRunnable);
-        logD("next display in " + (refreshMs / 1000L) + "s");
+        long wakeAt = System.currentTimeMillis() + refreshMs;
+        logD("next display in " + (refreshMs / 1000L) + "s (at " + new java.util.Date(wakeAt) + ")");
         refreshHandler.postDelayed(refreshRunnable, refreshMs);
     }
 

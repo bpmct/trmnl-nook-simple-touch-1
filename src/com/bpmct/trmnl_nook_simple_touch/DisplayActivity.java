@@ -817,6 +817,8 @@ public class DisplayActivity extends Activity {
             }
             waitForWifiThenFetch();
             return;
+        } else if (!isConnectedToNetwork(this)) {
+            logD("wifi has IP but ConnectivityManager not yet connected — proceeding anyway");
         }
         if (!ensureCredentials()) {
             return;

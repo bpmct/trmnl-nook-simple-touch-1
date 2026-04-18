@@ -84,9 +84,58 @@ docker exec <container_id> bash -c "<command>"
 
 ## Worktrees
 
-Active development happens in the worktree at `/home/coder/trmnl-nook-sleep` on branch `feature/tap-menu-sleep`. The main checkout is at `/home/coder/trmnl-nook-simple-touch`.
+Active development happens in the worktree at `/home/coder/trmnl-nook-showcase` on branch `feature/showcase-mode`. The main checkout is at `/home/coder/trmnl-nook-simple-touch`.
 
-> **CRITICAL for agents:** The devcontainer mounts `/home/coder/trmnl-nook-sleep` as `/workspace`.
-> All source edits MUST be made to files under `/home/coder/trmnl-nook-sleep/` (the worktree).
-> Editing `/home/coder/trmnl-nook-simple-touch/` (the main checkout) has NO effect on builds.
+> **CRITICAL for agents:** The devcontainer mounts `/home/coder/trmnl-nook` as `/workspace`.
+> All source edits MUST be made to files under the active worktree (e.g. `/home/coder/trmnl-nook-showcase/`).
+> Editing the main checkout directly has NO effect on builds.
 > Always verify with: `docker inspect <container_id> --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`
+
+---
+
+## RotateLayout Coordinate Geometry
+
+The physical screen is **800px wide × 600px tall** (landscape, hardware mounted sideways). `RotateLayout` applies a 90° rotation to all UI content so it renders correctly.
+
+### Transform mechanics
+
+`dispatchDraw` applies:
+```java
+canvas.translate(getWidth(), 0);  // getWidth() = 800
+canvas.rotate(90);
+```
+
+A point at child coordinates `(cx, cy)` maps to physical coordinates:
+```
+physical_x = 800 - cy
+physical_y = cx
+```
+
+- **child-X axis → physical-Y axis** (vertical on screen)
+- **child-Y axis → physical-X axis** (horizontal on screen, inverted)
+
+### Root child dimensions
+
+`RotateLayout.onMeasure` swaps width/height specs for 90°, so the `root` FrameLayout child thinks it is **800px wide × 600px tall** even though it visually renders as 600px wide × 800px tall on the physical screen.
+
+| `root` field | Value | Physical meaning |
+|---|---|---|
+| `root.getWidth()` | 800 | physical height |
+| `root.getHeight()` | 600 | physical width |
+
+### Menu bar layout rules
+
+The menu is a **HORIZONTAL** `LinearLayout` inside `root`.
+
+- **Width**: fixed value less than 800 (currently `480`) with `Gravity.CENTER` — gives a floating centred bar. Do **not** use `MATCH_PARENT` (that gives 800px = full physical height). Do **not** use 600 (that is `root.getHeight()` = physical width).
+- **Height**: `WRAP_CONTENT` (~40px)
+- **Buttons**: `new LinearLayout.LayoutParams(0, 40, 1.0f)` — `width=0, weight=1` distributes evenly across child-X (= physical-Y); `height=40` sets bar thickness in child-Y (= physical-X).
+- `Button.setMinWidth(0)` + `Button.setMinimumWidth(0)` are **required** — Android's Button has a built-in minimum width that breaks weight distribution without them.
+
+### Re-show clipping fix
+
+After `menuLayout.setVisibility(GONE)` → `VISIBLE`, Android may skip re-measuring since params haven't changed. `requestLayout()` alone is unreliable. The fix: call `setLayoutParams()` with the desired params **every time the menu is shown** — this forces a re-measure and correct `Gravity.CENTER` positioning.
+
+### `dispatchDraw` canvas state
+
+`RotateLayout.dispatchDraw` must call `canvas.save()` / `canvas.restoreToCount()` around the transform. Without it the canvas state leaks to subsequent draw passes, causing right-side EPD ghosting.

@@ -45,9 +45,18 @@ import android.graphics.BitmapFactory;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Calendar;
+import android.text.SpannableString;
+import android.text.style.UnderlineSpan;
 
 public class DisplayActivity extends Activity {
     public static final String EXTRA_CLEAR_IMAGE = "clear_image";
+    public static final String EXTRA_SHOWCASE_API_ID      = "showcase_api_id";
+    public static final String EXTRA_SHOWCASE_API_TOKEN   = "showcase_api_token";
+    public static final String EXTRA_SHOWCASE_API_URL     = "showcase_api_url";
+    public static final int    EXTRA_SHOWCASE_CELL_NONE   = -1;
+    public static final String EXTRA_SHOWCASE_CELL        = "showcase_cell";
+    /** Absolute path to a pre-rendered PNG from the showcase grid; show it immediately, skip initial fetch. */
+    public static final String EXTRA_SHOWCASE_PRELOAD_PATH = "showcase_preload_path";
     private static final String TAG = "TRMNLAPI";
     private static final long DEFAULT_REFRESH_MS = 15 * 60 * 1000;
     private static final String API_DISPLAY_PATH = "/display";
@@ -62,6 +71,7 @@ public class DisplayActivity extends Activity {
     private ScrollView contentScroll;
     private RotateLayout appRotateLayout;
     private FrameLayout rootLayout;
+    private View noWifiOverlay;
     private LinearLayout menuLayout;
     private LinearLayout bootLayout;
     private TextView bootStatus;
@@ -71,9 +81,12 @@ public class DisplayActivity extends Activity {
     private TextView batteryView;
     private Button nextButton;
     private Button settingsButton;
+    private Button customizeButton;
     private TextView loadingStatusView;
+    private TextView showcaseStatusView;
     private RotateLayout imageRotateLayout;
     private boolean menuVisible = false;
+    private boolean giftScreenVisible = false;
     private final Handler refreshHandler = new Handler();
     private Runnable refreshRunnable;
     private volatile boolean fetchInProgress = false;
@@ -83,6 +96,10 @@ public class DisplayActivity extends Activity {
     private Bitmap lastDisplayedImage;
     /** Reason for current fetch (for logging) */
     private volatile String fetchReason = "unknown";
+    private String showcaseApiId;    // non-null when running as showcase cell
+    private String showcaseApiToken;
+    private String showcaseApiUrl;   // per-cell API URL (e.g. larapaper endpoint)
+    private int    showcaseCell = EXTRA_SHOWCASE_CELL_NONE;
     private final StringBuilder logBuffer = new StringBuilder();
     private static final int MAX_LOG_CHARS = 6000;
     private static final int APP_ROTATION_DEGREES = 90;
@@ -98,7 +115,7 @@ public class DisplayActivity extends Activity {
     private volatile boolean sleepPending = false;
     private Runnable pendingWifiWarmupRunnable;
     private Runnable pendingConnectivityTimeoutRunnable;
-    private static final long CONNECTIVITY_MAX_WAIT_MS = 30 * 1000;
+    private static final long CONNECTIVITY_MAX_WAIT_MS = 5 * 1000;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -231,23 +248,25 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT,
                 ViewGroup.LayoutParams.FILL_PARENT));
 
-        // Menu content (normal orientation; root is rotated).
+        // Menu sits OUTSIDE the rotated root so MATCH_PARENT resolves to
+        // physical screen width (600px), not the rotated child width (800px).
         menuLayout = new LinearLayout(this);
         menuLayout.setOrientation(LinearLayout.HORIZONTAL);
         menuLayout.setVisibility(View.GONE);
         menuLayout.setClickable(true);
         menuLayout.setFocusable(true);
 
-        menuLayout.setPadding(18, 12, 18, 12);
+        menuLayout.setPadding(8, 4, 8, 4);
         menuLayout.setBackgroundColor(0xFFEFEFEF);
+        menuLayout.setGravity(Gravity.CENTER_HORIZONTAL);
 
         batteryView = new TextView(this);
         batteryView.setTextColor(0xFF000000);
-        batteryView.setTextSize(14);
+        batteryView.setTextSize(16);
         batteryView.setText("Battery: --%");
+        batteryView.setGravity(Gravity.CENTER_VERTICAL);
         menuLayout.addView(batteryView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.WRAP_CONTENT, 40));
 
         nextButton = new Button(this);
         nextButton.setText("Next");
@@ -270,10 +289,15 @@ public class DisplayActivity extends Activity {
                 return false;
             }
         });
+        nextButton.setTextSize(15);
+        nextButton.setPadding(4, 0, 4, 0);
+        nextButton.setMinHeight(0);
+        nextButton.setMinimumHeight(0);
+        nextButton.setMinWidth(0);
+        nextButton.setMinimumWidth(0);
         LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        nextParams.leftMargin = 18;
+                0, 40, 1.0f);
+        nextParams.leftMargin = 6;
         menuLayout.addView(nextButton, nextParams);
 
         settingsButton = new Button(this);
@@ -295,27 +319,80 @@ public class DisplayActivity extends Activity {
                 return false;
             }
         });
+        settingsButton.setTextSize(15);
+        settingsButton.setPadding(4, 0, 4, 0);
+        settingsButton.setMinHeight(0);
+        settingsButton.setMinimumHeight(0);
+        settingsButton.setMinWidth(0);
+        settingsButton.setMinimumWidth(0);
         LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        settingsParams.leftMargin = 18;
+                0, 40, 1.0f);
+        settingsParams.leftMargin = 6;
         menuLayout.addView(settingsButton, settingsParams);
+
+        customizeButton = new Button(this);
+        customizeButton.setText("Customize");
+        customizeButton.setTextColor(0xFF000000);
+        customizeButton.setClickable(true);
+        customizeButton.setVisibility(View.GONE);
+        customizeButton.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    hideMenu();
+                    showGiftModeScreen();
+                    return true;
+                }
+                return false;
+            }
+        });
+        customizeButton.setTextSize(16);
+        customizeButton.setPadding(4, 0, 4, 0);
+        customizeButton.setMinHeight(0);
+        customizeButton.setMinimumHeight(0);
+        customizeButton.setMinWidth(0);
+        customizeButton.setMinimumWidth(0);
+        LinearLayout.LayoutParams customizeParams = new LinearLayout.LayoutParams(
+                0, 40, 1.0f);
+        customizeParams.leftMargin = 6;
+        menuLayout.addView(customizeButton, customizeParams);
 
         loadingStatusView = new TextView(this);
         loadingStatusView.setTextColor(0xFF000000);
-        loadingStatusView.setTextSize(14);
+        loadingStatusView.setTextSize(16);
         loadingStatusView.setPadding(8, 0, 8, 0);
         loadingStatusView.setVisibility(View.GONE);
         menuLayout.addView(loadingStatusView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The root child is 800×600 in child space (90° rotation maps:
+        //   child-X → physical-Y,  child-Y → physical-X).
+        // Menu must fill child HEIGHT (= physical width, 600px) → MATCH_PARENT height.
+        // Center in child WIDTH (= physical height, 800px) → Gravity.CENTER_HORIZONTAL.
+        menuLayout.setOrientation(LinearLayout.HORIZONTAL);
         FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                480,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
         root.addView(menuLayout, menuParams);
         menuLayout.bringToFront();
+
+        // Showcase fetch status bar — shown at bottom of screen during preload-refresh
+        // when super sleep is enabled, so user knows a flash is coming.
+        showcaseStatusView = new TextView(this);
+        showcaseStatusView.setText("Loading latest image... then will sleep.");
+        showcaseStatusView.setTextColor(0xFF000000);
+        showcaseStatusView.setTextSize(13);
+        showcaseStatusView.setGravity(Gravity.CENTER);
+        showcaseStatusView.setBackgroundColor(0xFFEEEEEE);
+        showcaseStatusView.setPadding(16, 8, 16, 8);
+        showcaseStatusView.setVisibility(View.GONE);
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        root.addView(showcaseStatusView, statusParams);
+        showcaseStatusView.bringToFront();
 
         appRotateLayout = new RotateLayout(this);
         appRotateLayout.setAngle(APP_ROTATION_DEGREES);
@@ -324,6 +401,8 @@ public class DisplayActivity extends Activity {
                 ViewGroup.LayoutParams.FILL_PARENT));
 
         setContentView(appRotateLayout);
+
+        applyShowcaseExtras(getIntent());
 
         // Alarm + receiver for wake-from-sleep refresh (Electric-Sign pattern).
         alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
@@ -343,12 +422,18 @@ public class DisplayActivity extends Activity {
                     logD("alarm: fetch already in progress, skipping");
                     return;
                 }
+                // If running as a showcase cell, advance to the next cell before fetching
+                if (isShowcaseCell()) {
+                    int nextCell = (showcaseCell + 1) % ShowcaseActivity.NUM_CELLS;
+                    showcaseCell     = nextCell;
+                    showcaseApiId    = ShowcaseActivity.getCellId(a, nextCell);
+                    showcaseApiToken = ShowcaseActivity.getCellToken(a, nextCell);
+                    showcaseApiUrl   = ShowcaseActivity.getCellApiUrl(a, nextCell);
+                }
                 fetchReason = "alarm";
-                // Electric-Sign-style: if we slept with WiFi off, turn it on and wait before fetching
                 WifiManager wifi = (WifiManager) a.getSystemService(Context.WIFI_SERVICE);
-                        if (ApiPrefs.isAllowSleep(a) && wifi != null && !wifi.isWifiEnabled()
-                        && !isConnectedToNetwork(a)) {
-                    wifi.setWifiEnabled(true);
+                if (!isConnectedToNetwork(a)) {
+                    if (wifi != null && !wifi.isWifiEnabled()) wifi.setWifiEnabled(true);
                     a.waitForWifiThenFetch();
                     return;
                 }
@@ -359,11 +444,42 @@ public class DisplayActivity extends Activity {
 
         setKeepScreenAwake(true);
 
-        boolean wifiJustOn = ensureWifiOnWhenForeground();
+        // Gift mode shows a static screen — never needs WiFi. But showcase cells always need WiFi.
+        boolean wifiJustOn = (ApiPrefs.isGiftModeEnabled(this) && !isShowcaseCell()) ? false : ensureWifiOnWhenForeground();
 
-        // Initial display: generic image (no API) or fetch from API
-        if (USE_GENERIC_IMAGE) {
+        // Initial display: showcase grid first; gift screen accessible via "Customize" in header.
+        if (!isShowcaseCell() && getIntent().getBooleanExtra("show_gift_screen", false)) {
+            showGiftModeScreen();
+            return;
+        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
+            startActivity(new Intent(this, ShowcaseActivity.class));
+            finish();
+            return;
+        } else if (!isShowcaseCell() && ApiPrefs.isGiftModeEnabled(this)) {
+            showGiftModeScreen();
+            return;
+        } else if (USE_GENERIC_IMAGE) {
             showGenericImageAndSleep();
+        } else if (isShowcaseCell() && getIntent().hasExtra(EXTRA_SHOWCASE_PRELOAD_PATH)) {
+            // Bitmap already fetched in the showcase grid — display it instantly, no fetch needed.
+            final String preloadPath = getIntent().getStringExtra(EXTRA_SHOWCASE_PRELOAD_PATH);
+            refreshHandler.post(new Runnable() {
+                public void run() {
+                    Bitmap bmp = null;
+                    try {
+                        bmp = android.graphics.BitmapFactory.decodeFile(preloadPath);
+                    } catch (Throwable t) {
+                        logW("preload decode failed: " + t);
+                    }
+                    if (bmp != null) {
+                        displayPreloadedImage(bmp);
+                    } else {
+                        // Fall back to a normal fetch if decode fails
+                        fetchReason = "preload-fallback";
+                        startFetch();
+                    }
+                }
+            });
         } else if (ensureCredentials()) {
             fetchReason = "onCreate";
             if (wifiJustOn) {
@@ -392,20 +508,39 @@ public class DisplayActivity extends Activity {
         } catch (Throwable t) { /* ignore */ }
         setKeepScreenAwake(true);
 
-        boolean wifiJustOn = ensureWifiOnWhenForeground();
+        // Gift mode shows a static screen — never needs WiFi. But showcase cells always need WiFi.
+        boolean wifiJustOn = (ApiPrefs.isGiftModeEnabled(this) && !isShowcaseCell()) ? false : ensureWifiOnWhenForeground();
 
         applyIntentState(getIntent());
-        if (ApiPrefs.isGiftModeEnabled(this)) {
+        if (!isShowcaseCell()) {
+            applyShowcaseExtras(getIntent());
+        }
+        if (!isShowcaseCell() && getIntent().getBooleanExtra("show_gift_screen", false)) {
             showGiftModeScreen();
+            return;
+        } else if (!isShowcaseCell() && ApiPrefs.isShowcaseModeEnabled(this)) {
+            startActivity(new Intent(this, ShowcaseActivity.class));
+            finish();
+            return;
+        } else if (!isShowcaseCell() && ApiPrefs.isGiftModeEnabled(this)) {
+            showGiftModeScreen();
+            return;
         } else if (USE_GENERIC_IMAGE) {
             showGenericImageAndSleep();
         } else if (ensureCredentials()) {
             if (!fetchInProgress) {
-                fetchReason = "onResume";
-                if (wifiJustOn) {
-                    waitForWifiThenFetch();
+                // Showcase cell: if we already have an image from the preload, don't
+                // immediately re-fetch — scheduleNextCycle() from displayPreloadedImage
+                // will handle the next refresh at the normal interval.
+                if (isShowcaseCell() && lastDisplayedImage != null) {
+                    logD("onResume: showcase cell has preloaded image, skipping immediate fetch");
                 } else {
-                    startFetch();
+                    fetchReason = "onResume";
+                    if (wifiJustOn) {
+                        waitForWifiThenFetch();
+                    } else {
+                        startFetch();
+                    }
                 }
             } else {
                 logD("onResume: fetch already in progress, skipping");
@@ -437,13 +572,35 @@ public class DisplayActivity extends Activity {
             startFetch();
             return;
         }
-        // Only show Connecting in the dialog when user tapped Next. Resume/alarm wake: keep previous display, wait in background.
-        if (menuVisible) {
-            showMenuStatus("Connecting…", false);
+        // Hide the showcase status banner immediately — no-wifi overlay needs to be visible.
+        // Exception: if we already have a cached image on screen (preload path), keep the
+        // "Loading latest image" banner visible so the user knows a refresh is in progress.
+        if (showcaseStatusView != null && lastDisplayedImage == null) {
+            showcaseStatusView.setVisibility(View.GONE);
         }
-        ensureWifiOnWhenForeground();
         final DisplayActivity a = this;
-        final boolean showErrorInMenu = menuVisible;
+        WifiManager wm = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+        // If WiFi radio is off entirely, nothing to wait for — show overlay immediately.
+        if (wm != null && !wm.isWifiEnabled()) {
+            logD("wifi radio off — showing no-wifi screen immediately");
+            showNoWifiScreen();
+            scheduleNextCycle();
+            return;
+        }
+        // Fast-path: WiFi is on and already has an IP — just fetch now.
+        if (wm != null && wm.isWifiEnabled()) {
+            WifiInfo wi = wm.getConnectionInfo();
+            if (wi != null && wi.getIpAddress() != 0) {
+                logD("wifi has IP, skipping wait — starting fetch");
+                startFetch();
+                return;
+            }
+        }
+        // WiFi is on but not yet associated (e.g. device just woke from sleep).
+        // Wait silently — connectivity receiver fires startFetch as soon as we associate.
+        if (menuVisible) {
+            showMenuStatus("Connecting\u2026", false);
+        }
         connectivityReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -466,36 +623,20 @@ public class DisplayActivity extends Activity {
             scheduleFetchAfterWifiWarmup();
             return;
         }
+        // Hard timeout — show no-wifi screen then schedule a retry so we don't get stuck.
         pendingConnectivityTimeoutRunnable = new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 pendingConnectivityTimeoutRunnable = null;
-                WifiManager wm = (WifiManager) a.getSystemService(Context.WIFI_SERVICE);
-                String wifiDetail = "unknown";
-                if (wm != null) {
-                    wifiDetail = "enabled=" + wm.isWifiEnabled();
-                    WifiInfo wi = wm.getConnectionInfo();
-                    if (wi != null) wifiDetail += " ip=" + wi.getIpAddress() + " rssi=" + wi.getRssi();
+                if (!isConnectedToNetwork(a)) {
+                    logD("connectivity timeout (" + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s) wifi=" + a.getWifiStateString() + " — showing no-wifi screen");
+                    cancelConnectivityWait();
+                    a.showNoWifiScreen();
+                    a.scheduleNextCycle();
                 }
-                logD("connectivity wait timed out after " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s wifi=" + wifiDetail);
-                logD("Ensure you are connected to WiFi. Press the home button and go into settings to configure.");
-                cancelConnectivityWait();
-                if (showErrorInMenu) {
-                    a.showMenuStatus("Couldn't connect. Will retry next cycle.", true);
-                } else {
-                    if (a.contentView != null) a.contentView.setText("Couldn't connect. Will retry next cycle.");
-                    if (a.contentScroll != null) a.contentScroll.setVisibility(View.VISIBLE);
-                    if (a.imageView != null) a.imageView.setVisibility(View.GONE);
-                    if (a.logView != null) a.logView.setVisibility(View.VISIBLE);
-                    a.forceFullRefresh();
-                }
-                a.scheduleNextCycle();
             }
         };
         refreshHandler.postDelayed(pendingConnectivityTimeoutRunnable, CONNECTIVITY_MAX_WAIT_MS);
-        setBootStatus("Waiting for WiFi...");
-        logD("waiting for connectivity, fetch as soon as up (max " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s)");
-        logD("Ensure you are connected to WiFi. Press the home button and go into settings to configure.");
+        logD("not connected — waiting up to " + (CONNECTIVITY_MAX_WAIT_MS / 1000L) + "s for association");
     }
 
     private void cancelConnectivityWait() {
@@ -519,11 +660,11 @@ public class DisplayActivity extends Activity {
         if (contentScroll != null) contentScroll.setVisibility(View.VISIBLE);
         if (imageView != null) imageView.setVisibility(View.GONE);
         if (logView != null) logView.setVisibility(View.GONE);
-        forceFullRefresh();
+        // Skip EPD refresh — transient state, image replaces it immediately
     }
 
-    /** WiFi is only off while sleeping; when app is in foreground, ensure it's on so fetch works.
-     * @return true if WiFi was off and we turned it on (caller should delay fetch to allow connection). */
+    /** WiFi stays on always; this is a no-op kept for call-site compatibility.
+     * @return always false */
     private boolean ensureWifiOnWhenForeground() {
         if (!ApiPrefs.isAllowSleep(this)) return false;
         WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
@@ -568,7 +709,7 @@ public class DisplayActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        logD("onPause pid=" + android.os.Process.myPid() + " fetchInProgress=" + fetchInProgress);
+
         // Restore screen timeout whenever we leave — user is navigating around the device.
         try {
             android.provider.Settings.System.putInt(
@@ -680,7 +821,7 @@ public class DisplayActivity extends Activity {
                 }
                 long sleepMs = refreshMs - SCREENSAVER_DELAY_MS;
                 if (sleepMs < 0) sleepMs = 0;
-                // Wake 45s early so WiFi warmup finishes by the time we want the next image
+                // subtract WiFi warmup so the alarm fires early enough to warm up WiFi before fetch
                 sleepMs = Math.max(0, sleepMs - WIFI_WARMUP_MS);
                 scheduleReload(sleepMs);
                 setKeepScreenAwake(false);
@@ -717,7 +858,7 @@ public class DisplayActivity extends Activity {
         logD("next display in " + (refreshMs / 1000L) + "s");
         if (ApiPrefs.isAllowSleep(this)) {
             writeScreenshotToScreensaver(bitmap);
-            scheduleReload(refreshMs);
+            scheduleReload(Math.max(0, refreshMs - WIFI_WARMUP_MS));
             setKeepScreenAwake(false);
             if (ApiPrefs.isAutoDisableWifi(this)) {
                 WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
@@ -856,11 +997,10 @@ public class DisplayActivity extends Activity {
         }
         fetchInProgress = true;
         fetchStartedFromMenu = menuVisible;
-        // Silent background fetch when aggressive sleep is on — no boot status,
-        // no log churn, screen stays dark/on screensaver until the new image renders.
-        boolean silentFetch = ApiPrefs.isSuperSleep(this)
-                && ApiPrefs.isAllowSleep(this)
-                && !menuVisible;
+        // Silent background fetch when aggressive sleep is on, or when running as a
+        // showcase cell — keep the current image visible until the new one arrives.
+        boolean silentFetch = (ApiPrefs.isSuperSleep(this) && ApiPrefs.isAllowSleep(this) && !menuVisible)
+                || (isShowcaseCell() && !menuVisible);
         if (!silentFetch) {
             setBootStatus("Fetching...");
             appendLogLine("Fetching...");
@@ -869,10 +1009,10 @@ public class DisplayActivity extends Activity {
         if (menuVisible) {
             showMenuStatus("Loading...", false);
         }
-        String httpsUrl = ApiPrefs.getApiBaseUrl(this) + API_DISPLAY_PATH;
+        String httpsUrl = resolveApiBaseUrl() + API_DISPLAY_PATH;
         logD("fetch reason=" + fetchReason + " wifi=" + getWifiStateString());
         logD("start: " + httpsUrl);
-        ApiFetchTask.start(this, httpsUrl, ApiPrefs.getApiId(this), ApiPrefs.getApiToken(this));
+        ApiFetchTask.start(this, httpsUrl, resolveApiId(), resolveApiToken());
     }
 
     private String getWifiStateString() {
@@ -892,7 +1032,7 @@ public class DisplayActivity extends Activity {
         if (contentScroll != null) contentScroll.setVisibility(View.VISIBLE);
         if (imageView != null) imageView.setVisibility(View.GONE);
         if (logView != null) logView.setVisibility(View.GONE);
-        forceFullRefresh();
+        // Skip EPD refresh — this is transient, image replaces it immediately
     }
 
     private void scheduleRefresh() {
@@ -952,6 +1092,7 @@ public class DisplayActivity extends Activity {
         if (bootComplete) return;
         bootComplete = true;
         if (bootLayout != null) bootLayout.setVisibility(View.GONE);
+        hideNoWifiOverlay();
     }
     
     private void setBootStatus(String status) {
@@ -961,6 +1102,7 @@ public class DisplayActivity extends Activity {
     }
 
     private void showGiftModeScreen() {
+
         hideBootScreen();
         if (bootLayout != null) bootLayout.setVisibility(View.GONE);
         if (logView != null) logView.setVisibility(View.GONE);
@@ -1020,7 +1162,7 @@ public class DisplayActivity extends Activity {
         
         // Description
         TextView desc = new TextView(this);
-        desc.setText("Use it for weather, calendars, news, or hundreds of other plugins from trmnl.com");
+        desc.setText("Customize it with your calendar, to-do list, weather, news, and hundreds of other plugins at trmnl.com — all your data, on your display.");
         desc.setTextSize(14);
         desc.setTextColor(0xFF666666);
         LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(
@@ -1112,10 +1254,7 @@ public class DisplayActivity extends Activity {
         // Allow device to sleep; user tap wakes it
         if (ApiPrefs.isAllowSleep(this)) {
             setKeepScreenAwake(false);
-            if (ApiPrefs.isAutoDisableWifi(this)) {
-                WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-                if (wifi != null) wifi.setWifiEnabled(false);
-            }
+
             logD("gift mode: sleep-ready (tap to wake)");
         }
     }
@@ -1194,9 +1333,54 @@ public class DisplayActivity extends Activity {
         if (nextButton != null) {
             nextButton.setPressed(false);
             nextButton.refreshDrawableState();
+            if (ApiPrefs.isGiftModeEnabled(this)) {
+                // In gift mode: Gallery goes back to showcase, Customize Yourself opens gift setup
+                nextButton.setText("Gallery");
+                nextButton.setOnTouchListener(new View.OnTouchListener() {
+                    public boolean onTouch(View v, MotionEvent event) {
+                        if (event.getAction() == MotionEvent.ACTION_UP) {
+                            hideMenu();
+                            startActivity(new Intent(DisplayActivity.this, ShowcaseActivity.class));
+                            finish();
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+            } else {
+                nextButton.setText("Next");
+                nextButton.setOnTouchListener(new View.OnTouchListener() {
+                    public boolean onTouch(View v, MotionEvent event) {
+                        if (event.getAction() == MotionEvent.ACTION_UP) {
+                            logD("menu: next tapped");
+                            if (USE_GENERIC_IMAGE) {
+                                hideMenu();
+                                showGenericImageAndSleep();
+                            } else {
+                                fetchReason = "menu-next";
+                                showMenuStatus("Loading...", false);
+                                startFetch();
+                            }
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+            }
         }
+        if (customizeButton != null) {
+            if (ApiPrefs.isGiftModeEnabled(this)) {
+                customizeButton.setPressed(false);
+                customizeButton.refreshDrawableState();
+                customizeButton.setVisibility(giftScreenVisible ? View.GONE : View.VISIBLE);
+            } else {
+                customizeButton.setVisibility(View.GONE);
+            }
+        }
+        applyMenuLayoutParams();
         if (menuLayout != null) menuLayout.setVisibility(View.VISIBLE);
         if (menuScrim != null) menuScrim.setVisibility(View.VISIBLE);
+        forceFullRefresh();
     }
 
     /** Show status text in the dialog (Loading/Connecting/Error); optionally show Next for retry. Keeps image visible. */
@@ -1210,7 +1394,9 @@ public class DisplayActivity extends Activity {
         if (batteryView != null) batteryView.setVisibility(View.GONE);
         if (nextButton != null) nextButton.setVisibility(showNextButton ? View.VISIBLE : View.GONE);
         if (settingsButton != null) settingsButton.setVisibility(View.GONE);
+        if (customizeButton != null) customizeButton.setVisibility(View.GONE);
         if (menuLayout != null && menuScrim != null) {
+            applyMenuLayoutParams();
             menuLayout.setVisibility(View.VISIBLE);
             menuScrim.setVisibility(View.VISIBLE);
         }
@@ -1218,13 +1404,24 @@ public class DisplayActivity extends Activity {
         forceFullRefresh();
     }
 
+
     /** Restore dialog to Battery / Next / Settings / Sleep. */
     private void showMenuNormal() {
         if (loadingStatusView != null) loadingStatusView.setVisibility(View.GONE);
         if (batteryView != null) batteryView.setVisibility(View.VISIBLE);
         if (nextButton != null) nextButton.setVisibility(View.VISIBLE);
         if (settingsButton != null) settingsButton.setVisibility(View.VISIBLE);
-        // No forceFullRefresh here - opening menu doesn't need e-ink flash
+        // No forceFullRefresh here — showMenuStatus callers handle their own refresh
+        if (menuLayout != null) {
+            logD("menu measured w=" + menuLayout.getMeasuredWidth()
+                    + " h=" + menuLayout.getMeasuredHeight()
+                    + " w=" + menuLayout.getWidth()
+                    + " h=" + menuLayout.getHeight()
+                    + " left=" + menuLayout.getLeft()
+                    + " top=" + menuLayout.getTop()
+                    + " root.w=" + ((android.view.View)menuLayout.getParent()).getWidth()
+                    + " root.h=" + ((android.view.View)menuLayout.getParent()).getHeight());
+        }
     }
 
     private void hideMenu() {
@@ -1232,6 +1429,143 @@ public class DisplayActivity extends Activity {
         if (menuLayout != null) menuLayout.setVisibility(View.GONE);
         if (menuScrim != null) menuScrim.setVisibility(View.GONE);
         flashEinkTransition();
+    }
+
+    /**
+     * Removes the no-WiFi overlay if it is currently shown.
+     */
+    private void hideNoWifiOverlay() {
+        if (noWifiOverlay != null) {
+            if (noWifiOverlay.getParent() != null) {
+                ((ViewGroup) noWifiOverlay.getParent()).removeView(noWifiOverlay);
+            }
+            noWifiOverlay = null;
+        }
+    }
+
+    private void showNoWifiScreen() {
+        // Gift mode without showcase: static screen, no WiFi needed, skip overlay.
+        if (ApiPrefs.isGiftModeEnabled(this) && !ApiPrefs.isShowcaseModeEnabled(this)) return;
+        // Don't stack duplicates.
+        if (noWifiOverlay != null) return;
+
+        LinearLayout overlay = new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setGravity(Gravity.CENTER);
+        overlay.setPadding(40, 60, 40, 40);
+        overlay.setBackgroundColor(0xFFFFFFFF);
+        // Consume all touches so nothing below the overlay fires.
+        overlay.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) { return true; }
+        });
+
+        TextView msg = new TextView(this);
+        msg.setText("This smart display needs WiFi.");
+        msg.setTextSize(18);
+        msg.setTextColor(0xFF000000);
+        msg.setGravity(Gravity.CENTER);
+        overlay.addView(msg, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView sub = new TextView(this);
+        sub.setText("Once connected, the screen will update automatically.");
+        sub.setTextSize(13);
+        sub.setTextColor(0xFF555555);
+        sub.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        subParams.topMargin = 12;
+        overlay.addView(sub, subParams);
+
+        Button wifiBtn = new Button(this);
+        wifiBtn.setText("Wi-Fi Settings");
+        wifiBtn.setTextColor(0xFF000000);
+        wifiBtn.setBackgroundColor(0xFFDDDDDD);
+        wifiBtn.setPadding(20, 16, 20, 16);
+        wifiBtn.setFocusable(true);
+        wifiBtn.setClickable(true);
+        wifiBtn.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    Intent wifiIntent = new Intent();
+                    wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
+                    try {
+                        startActivity(wifiIntent);
+                    } catch (Throwable t2) {
+                        try { startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)); } catch (Throwable t3) {}
+                    }
+                }
+                return true;
+            }
+        });
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnParams.topMargin = 24;
+        overlay.addView(wifiBtn, btnParams);
+
+        Button retryBtn = new Button(this);
+        retryBtn.setText("Retry");
+        retryBtn.setTextColor(0xFF000000);
+        retryBtn.setBackgroundColor(0xFFDDDDDD);
+        retryBtn.setPadding(20, 16, 20, 16);
+        retryBtn.setFocusable(true);
+        retryBtn.setClickable(true);
+        retryBtn.setOnTouchListener(new View.OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    hideNoWifiOverlay();
+                    fetchReason = "retry";
+                    waitForWifiThenFetch();
+                }
+                return true;
+            }
+        });
+        LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.FILL_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        retryParams.topMargin = 8;
+        overlay.addView(retryBtn, retryParams);
+
+        if (ApiPrefs.isGiftWebSetup(this)) {
+            LinearLayout.LayoutParams usbParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.FILL_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            usbParams.topMargin = 16;
+
+            TextView usbLine1 = new TextView(this);
+            usbLine1.setText("If the touchscreen isn't working or the password is complex,");
+            usbLine1.setTextSize(13);
+            usbLine1.setTextColor(0xFF888888);
+            usbLine1.setGravity(Gravity.CENTER);
+            overlay.addView(usbLine1, usbParams);
+
+            TextView usbLine2 = new TextView(this);
+            String url = "visit nooks.bpmct.net on a computer connected via USB.";
+            SpannableString urlSpan = new SpannableString(url);
+            int start = url.indexOf("nooks.bpmct.net");
+            urlSpan.setSpan(new UnderlineSpan(), start, start + "nooks.bpmct.net".length(), 0);
+            usbLine2.setText(urlSpan);
+            usbLine2.setTextSize(13);
+            usbLine2.setTextColor(0xFF888888);
+            usbLine2.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams usbParams2 = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.FILL_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            usbParams2.topMargin = 2;
+            overlay.addView(usbLine2, usbParams2);
+        }
+
+        noWifiOverlay = overlay;
+        if (showcaseStatusView != null) showcaseStatusView.setVisibility(View.GONE);
+        if (rootLayout != null) {
+            rootLayout.addView(overlay, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.FILL_PARENT,
+                    ViewGroup.LayoutParams.FILL_PARENT));
+        }
+        forceFullRefresh();
     }
 
     private void updateMenuBattery() {
@@ -1256,7 +1590,7 @@ public class DisplayActivity extends Activity {
         if (root == null) return;
         root.invalidate();
         root.requestLayout();
-        // Trigger EPD refresh AFTER content is in framebuffer
+        // Trigger EPD refresh AFTER content is in framebuffer (100ms delay matches upstream)
         root.postDelayed(new Runnable() {
             public void run() {
                 View r = getWindow().getDecorView();
@@ -1289,6 +1623,7 @@ public class DisplayActivity extends Activity {
             logView.invalidate();
         }
         forceFullRefresh();
+        // Second flush 120ms later — ensures e-ink clears ghost from menu overlay.
         refreshHandler.postDelayed(new Runnable() {
             public void run() {
                 forceFullRefresh();
@@ -1332,23 +1667,24 @@ public class DisplayActivity extends Activity {
 
         // Schedule wake alarm so the next refresh fires on time.
         // Use the current refreshMs minus the standard screensaver delay that was
-        // already skipped (we slept early), but never go negative.
+        // already skipped (we slept early), and minus the WiFi warmup, so the
+        // alarm fires early enough for WiFi to reconnect before the fetch.
         long sleepMs = refreshMs - SCREENSAVER_DELAY_MS - WIFI_WARMUP_MS;
         if (sleepMs < 0) sleepMs = 0;
         long wakeTime = scheduleReload(sleepMs);
         logD("sleepNow: alarm scheduled in " + (sleepMs / 1000L) + "s (wake at " + wakeTime + ")");
 
-        // Turn WiFi off to save power (same as the normal sleep path).
-        if (ApiPrefs.isAutoDisableWifi(this)) {
+
+        // Turn WiFi off to save power when auto-disable is on — but never for showcase
+        // cells, which need WiFi to stay on for the next cell fetch.
+        if (!isShowcaseCell() && ApiPrefs.isAutoDisableWifi(this)) {
             WifiManager wifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
             if (wifi != null && wifi.isWifiEnabled()) {
                 wifi.setWifiEnabled(false);
                 logD("sleepNow: WiFi disabled");
-            } else {
-                logD("sleepNow: WiFi already off or unavailable");
             }
         } else {
-            logD("sleepNow: auto-disable WiFi is OFF, leaving WiFi on");
+            logD("sleepNow: leaving WiFi on (showcase cell or auto-disable off)");
         }
 
         // Clear FLAG_KEEP_SCREEN_ON so the window manager stops keeping the screen on.
@@ -1418,7 +1754,79 @@ public class DisplayActivity extends Activity {
         }, 80);
     }
 
+    /** Returns the API ID to use — showcase override takes priority over ApiPrefs. */
+    private String resolveApiId() {
+        return (showcaseApiId != null) ? showcaseApiId : ApiPrefs.getApiId(this);
+    }
+
+    /** Returns the API token to use — showcase override takes priority over ApiPrefs. */
+    private String resolveApiToken() {
+        return (showcaseApiToken != null) ? showcaseApiToken : ApiPrefs.getApiToken(this);
+    }
+
+    /** Returns the API base URL — per-cell showcase URL takes priority over global pref. */
+    private String resolveApiBaseUrl() {
+        if (showcaseApiUrl != null && showcaseApiUrl.length() > 0) {
+            // showcaseApiUrl already has /display appended; strip it since caller adds API_DISPLAY_PATH
+            String u = showcaseApiUrl;
+            if (u.endsWith("/display")) u = u.substring(0, u.length() - "/display".length());
+            return u;
+        }
+        return ApiPrefs.getApiBaseUrl(this);
+    }
+
+    /** True when this instance was launched from a showcase cell tap. */
+    private boolean isShowcaseCell() {
+        return showcaseApiToken != null && showcaseApiToken.length() > 0;
+    }
+
+    private void applyShowcaseExtras(Intent intent) {
+        if (intent == null) return;
+        String id    = intent.getStringExtra(EXTRA_SHOWCASE_API_ID);
+        String token = intent.getStringExtra(EXTRA_SHOWCASE_API_TOKEN);
+        String url   = intent.getStringExtra(EXTRA_SHOWCASE_API_URL);
+        int    cell  = intent.getIntExtra(EXTRA_SHOWCASE_CELL, EXTRA_SHOWCASE_CELL_NONE);
+        if (token != null && token.length() > 0) {
+            showcaseApiId    = (id != null) ? id : "";
+            showcaseApiToken = token;
+            showcaseApiUrl   = (url != null) ? url : "";
+            showcaseCell     = cell;
+        }
+    }
+
+    /**
+     * Show a pre-loaded bitmap immediately (same logic as onPostExecute success path)
+     * then hand off to the normal sleep/cycle machinery.
+     */
+    private void displayPreloadedImage(Bitmap bmp) {
+        hideBootScreen();
+        imageView.setImageBitmap(bmp);
+        lastDisplayedImage = bmp;
+        writeScreenshotToScreensaver(bmp);
+        imageView.setVisibility(View.VISIBLE);
+        if (imageRotateLayout != null) imageRotateLayout.setVisibility(View.VISIBLE);
+        if (contentScroll != null) contentScroll.setVisibility(View.GONE);
+        if (logView != null) logView.setVisibility(View.GONE);
+        hideMenu();
+        logD("displayed preloaded showcase image");
+        // Show cached image immediately, then fetch fresh in background.
+        // Sleep (if enabled) happens after the fresh fetch completes in onPostExecute.
+        forceFullRefresh();
+        if (isShowcaseCell() && ApiPrefs.isSuperSleep(this) && ApiPrefs.isAllowSleep(this)) {
+            if (showcaseStatusView != null) showcaseStatusView.setVisibility(View.VISIBLE);
+        }
+        fetchReason = "preload-refresh";
+        startFetch();
+    }
+
+    private void goBackToShowcase() {
+        hideMenu();
+        startActivity(new Intent(DisplayActivity.this, ShowcaseActivity.class));
+        finish();
+    }
+
     private boolean ensureCredentials() {
+        if (isShowcaseCell()) return true;
         // Don't redirect to settings if gift mode is enabled
         if (ApiPrefs.isGiftModeEnabled(this)) {
             return false;
@@ -1652,10 +2060,16 @@ public class DisplayActivity extends Activity {
                         a.logD("response body:\n" + ar.rawText);
                     }
                     a.hideBootScreen();
+                    a.hideNoWifiOverlay();
+                    if (a.bootLayout != null) a.bootLayout.setVisibility(View.GONE);
                     a.imageView.setImageBitmap(ar.bitmap);
                     a.lastDisplayedImage = ar.bitmap;
                     // Always write screensaver immediately so TRMNL appears in NOOK's screensaver list
                     a.writeScreenshotToScreensaver(ar.bitmap);
+                    // If this is a showcase cell, update the grid cache
+                    if (a.isShowcaseCell()) {
+                        ShowcaseActivity.saveCachedBitmap(a, a.showcaseCell, ar.bitmap);
+                    }
                     boolean superSleep = ApiPrefs.isSuperSleep(a);
                     boolean allowSleep = ApiPrefs.isAllowSleep(a);
                     a.logD("super-sleep check: superSleep=" + superSleep + " allowSleep=" + allowSleep + " fromMenu=" + fromMenu);
@@ -1669,9 +2083,9 @@ public class DisplayActivity extends Activity {
                     if (ar.imageUrl != null) a.logD("image url: " + ar.imageUrl);
                     a.logD("displayed image");
                     if (superSleep && allowSleep && !fromMenu) {
-                        // Aggressive sleep: image is visible, screensaver already written.
-                        // Sleep immediately — no forceFullRefresh, no scheduleNextCycle.
-                        // The NOOK screensaver renders the single EPD flash on timeout.
+                        // Aggressive sleep: hide status bar, flush EPD, then sleep.
+                        if (a.showcaseStatusView != null) a.showcaseStatusView.setVisibility(View.GONE);
+                        a.forceFullRefresh();
                         a.logD("super sleep: sleeping after image render");
                         a.sleepNow();
                     } else {
@@ -1690,7 +2104,10 @@ public class DisplayActivity extends Activity {
                 String text = ar.rawText != null ? ar.rawText : "Error: null result";
                 a.logD("response body:\n" + text);
                 a.logD("no image in response, will retry");
-                if (fromMenu) {
+                if (a.isShowcaseCell()) {
+                    // Showcase cell: keep current image, retry silently
+                    if (a.showcaseStatusView != null) a.showcaseStatusView.setVisibility(View.GONE);
+                } else if (fromMenu) {
                     // User tapped Next - show error in menu dialog, let them retry
                     a.showMenuStatus("No image - tap Next to retry", true);
                     a.forceFullRefresh();
@@ -1708,9 +2125,17 @@ public class DisplayActivity extends Activity {
             }
 
             String text = result != null ? result.toString() : "Error: null result";
-            // Show error with boot header + logs
             a.hideMenu();
             a.logW("ERROR: " + text);
+            if (a.isShowcaseCell()) {
+                // Keep the current image visible; show error in the menu overlay so the
+                // user can see it, tap to dismiss, and the next cycle will retry.
+                if (a.showcaseStatusView != null) a.showcaseStatusView.setVisibility(View.GONE);
+                a.showMenuStatus("Error fetching — will retry", false);
+                a.forceFullRefresh();
+                a.scheduleNextCycle();
+                return;
+            }
             a.setBootStatus("Error - tap to retry");
             if (a.bootLayout != null) a.bootLayout.setVisibility(View.VISIBLE);
             if (a.imageView != null) a.imageView.setVisibility(View.GONE);

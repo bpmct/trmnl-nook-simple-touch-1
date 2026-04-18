@@ -28,6 +28,7 @@ public class SettingsActivity extends Activity {
     private CheckBox superSleepCheck;
     private CheckBox fileLoggingCheck;
     private CheckBox giftModeCheck;
+    private CheckBox showcaseModeCheck;
     private Button giftSettingsButton;
     private TextView sleepHint;
     private CheckBox allowHttpCheck;
@@ -146,6 +147,36 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        panelGeneral.addView(createSectionLabel("Showcase Mode"));
+        showcaseModeCheck = new CheckBox(this);
+        showcaseModeCheck.setText("Enable showcase mode (2x2 grid)");
+        showcaseModeCheck.setTextColor(0xFF000000);
+        showcaseModeCheck.setChecked(ApiPrefs.isShowcaseModeEnabled(this));
+        showcaseModeCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                ApiPrefs.setShowcaseModeEnabled(SettingsActivity.this, isChecked);
+            }
+        });
+        panelGeneral.addView(showcaseModeCheck);
+
+        TextView showcaseHint = new TextView(this);
+        showcaseHint.setText("Shows 4 live TRMNL screens. Tap any cell to set as display.");
+        showcaseHint.setTextSize(11);
+        showcaseHint.setTextColor(0xFF888888);
+        showcaseHint.setPadding(40, 0, 0, 8);
+        panelGeneral.addView(showcaseHint);
+
+        Button showcaseSettingsButton = createGreyButton("Configure Showcase");
+        showcaseSettingsButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startActivity(new android.content.Intent(SettingsActivity.this, ShowcaseSettingsActivity.class));
+            }
+        });
+        LinearLayout.LayoutParams showcaseBtnParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        showcaseBtnParams.topMargin = 6;
+        panelGeneral.addView(showcaseSettingsButton, showcaseBtnParams);
+
         panelGeneral.addView(createSectionLabel("Gift Mode"));
         giftModeCheck = new CheckBox(this);
         giftModeCheck.setText("Enable gift mode");
@@ -193,7 +224,13 @@ public class SettingsActivity extends Activity {
         Button wifiSettingsButton = createGreyButton("WiFi Settings");
         wifiSettingsButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+                Intent wifiIntent = new Intent();
+                wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
+                try {
+                    startActivity(wifiIntent);
+                } catch (Throwable t) {
+                    startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+                }
             }
         });
         LinearLayout.LayoutParams wifiSettBtnParams = new LinearLayout.LayoutParams(
@@ -277,6 +314,17 @@ public class SettingsActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clearParams.topMargin = 6;
         panelSystem.addView(clearLogsButton, clearParams);
+
+        Button clearCacheButton = createGreyButton("Clear Showcase Cache");
+        clearCacheButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                ShowcaseActivity.clearCache(SettingsActivity.this);
+            }
+        });
+        LinearLayout.LayoutParams clearCacheParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clearCacheParams.topMargin = 6;
+        panelSystem.addView(clearCacheButton, clearCacheParams);
 
         panelSystem.addView(createSectionLabel("Device"));
         LinearLayout deviceRow = new LinearLayout(this);
@@ -436,6 +484,7 @@ public class SettingsActivity extends Activity {
         return btn;
     }
 
+
     private void updateGiftSettingsVisibility() {
         if (giftSettingsButton != null && giftModeCheck != null) {
             giftSettingsButton.setVisibility(giftModeCheck.isChecked() ? View.VISIBLE : View.GONE);
@@ -475,6 +524,7 @@ public class SettingsActivity extends Activity {
         if (allowSleepCheck != null) allowSleepCheck.setChecked(ApiPrefs.isAllowSleep(this));
         if (fileLoggingCheck != null) fileLoggingCheck.setChecked(ApiPrefs.isFileLoggingEnabled(this));
         if (giftModeCheck != null) giftModeCheck.setChecked(ApiPrefs.isGiftModeEnabled(this));
+        if (showcaseModeCheck != null) showcaseModeCheck.setChecked(ApiPrefs.isShowcaseModeEnabled(this));
         if (sleepHint != null) sleepHint.setVisibility(View.VISIBLE);
         if (giftSettingsButton != null && giftModeCheck != null) {
             giftSettingsButton.setVisibility(giftModeCheck.isChecked() ? View.VISIBLE : View.GONE);

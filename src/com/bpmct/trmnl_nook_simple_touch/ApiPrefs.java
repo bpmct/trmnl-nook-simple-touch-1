@@ -22,6 +22,7 @@ public class ApiPrefs {
     private static final String KEY_AUTO_DISABLE_WIFI = "auto_disable_wifi";
     private static final String KEY_SUPER_SLEEP = "super_sleep";
     private static final String KEY_SCREENSAVER_WRITTEN = "screensaver_written_once";
+    private static final String KEY_SHOWCASE_MODE = "showcase_mode";
     private static final String SCREENSAVER_PATH = "/media/screensavers/TRMNL/display.png";
 
     public static boolean hasCredentials(Context context) {
@@ -225,6 +226,109 @@ public class ApiPrefs {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean(KEY_AUTO_DISABLE_WIFI, enabled).commit();
     }
+
+    // ---------------------------------------------------------------------------
+    // Showcase cell credentials (4 independent cells)
+    // Each cell has its own token, optional device ID, and optional API base URL.
+    // Keys: showcase_cell_token_0..3, showcase_cell_id_0..3, showcase_cell_url_0..3
+    // ---------------------------------------------------------------------------
+
+    /** @deprecated Use getShowcaseCellToken(ctx, 0) — kept for SharedPrefs backwards compat */
+    public static String getShowcaseDeviceId(Context context, int index) {
+        // Old 2-device keys — map device 0→cell 0, device 1→cell 1 for backwards compat
+        return getShowcaseCellId(context, index);
+    }
+    /** @deprecated Use setShowcaseCellToken */
+    public static void setShowcaseDeviceId(Context context, int index, String id) {
+        setShowcaseCellId(context, index, id);
+    }
+    /** @deprecated Use getShowcaseCellToken */
+    public static String getShowcaseDeviceToken(Context context, int index) {
+        return getShowcaseCellToken(context, index);
+    }
+    /** @deprecated Use setShowcaseCellToken */
+    public static void setShowcaseDeviceToken(Context context, int index, String token) {
+        setShowcaseCellToken(context, index, token);
+    }
+
+    public static String getShowcaseCellId(Context context, int cellIdx) {
+        String key = "showcase_cell_id_" + cellIdx;
+        // Fall back to old key for cell 0 and 1 (migration)
+        if (cellIdx == 0 || cellIdx == 1) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            if (!prefs.contains(key)) {
+                String oldKey = "showcase_device_id_" + cellIdx;
+                String oldVal = prefs.getString(oldKey, "");
+                if (oldVal != null && oldVal.trim().length() > 0) return oldVal.trim();
+            }
+        }
+        String v = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(key, "");
+        return (v != null) ? v.trim() : "";
+    }
+
+    public static void setShowcaseCellId(Context context, int cellIdx, String id) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString("showcase_cell_id_" + cellIdx, id != null ? id.trim() : "").commit();
+    }
+
+    public static String getShowcaseCellToken(Context context, int cellIdx) {
+        String key = "showcase_cell_token_" + cellIdx;
+        // Fall back to old key for cell 0 and 1 (migration)
+        if (cellIdx == 0 || cellIdx == 1) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            if (!prefs.contains(key)) {
+                String oldKey = "showcase_device_token_" + cellIdx;
+                String oldVal = prefs.getString(oldKey, "");
+                if (oldVal != null && oldVal.trim().length() > 0) return oldVal.trim();
+            }
+        }
+        String v = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(key, "");
+        return (v != null) ? v.trim() : "";
+    }
+
+    public static void setShowcaseCellToken(Context context, int cellIdx, String token) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString("showcase_cell_token_" + cellIdx, token != null ? token.trim() : "").commit();
+    }
+
+    /** Per-cell API base URL. Empty string means use the global default (usetrmnl.com). */
+    public static String getShowcaseCellUrl(Context context, int cellIdx) {
+        String v = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString("showcase_cell_url_" + cellIdx, "");
+        return (v != null) ? v.trim() : "";
+    }
+
+    public static void setShowcaseCellUrl(Context context, int cellIdx, String url) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString("showcase_cell_url_" + cellIdx, url != null ? url.trim() : "").commit();
+    }
+
+    // ---------------------------------------------------------------------------
+    // Showcase cell names (4 cells, one name each)
+    // ---------------------------------------------------------------------------
+
+    public static String getCellName(Context context, int cellIdx) {
+        String key = "showcase_cell_name_" + cellIdx;
+        String v = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(key, "");
+        return (v != null) ? v.trim() : "";
+    }
+
+    public static void setCellName(Context context, int cellIdx, String name) {
+        String key = "showcase_cell_name_" + cellIdx;
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(key, name != null ? name.trim() : "").commit();
+    }
+
+    public static boolean isShowcaseModeEnabled(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_SHOWCASE_MODE, false);
+    }
+
+    public static void setShowcaseModeEnabled(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_SHOWCASE_MODE, enabled).commit();
+    }
+
 
     /** Whether to sleep immediately after a new image loads (timer/alarm fetches only). Default false. */
     public static boolean isSuperSleep(Context context) {

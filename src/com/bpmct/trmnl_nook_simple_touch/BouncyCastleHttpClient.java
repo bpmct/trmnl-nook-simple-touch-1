@@ -752,6 +752,12 @@ public class BouncyCastleHttpClient {
 
             public int[] getCipherSuites() {
                 return new int[] {
+                        // ECDSA certs (Cloudflare, Let's Encrypt ECDSA)
+                        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+                        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+                        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+                        CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+                        // RSA certs (usetrmnl.com)
                         CipherSuite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
                         CipherSuite.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
                 };
@@ -782,21 +788,18 @@ public class BouncyCastleHttpClient {
                         if (allowSelfSigned) {
                             Log.d(TAG, "BC skipping certificate validation (self-signed allowed)");
                             return;
-                        }
-                        if (tm == null) {
-                            throw new TlsFatalAlert(AlertDescription.bad_certificate);
+
                         }
                         try {
                             X509Certificate[] chain = toX509Chain(serverCertificate);
                             if (chain == null || chain.length == 0) {
                                 throw new TlsFatalAlert(AlertDescription.bad_certificate);
                             }
-                            String authType = chain[0].getPublicKey().getAlgorithm();
-                            tm.checkServerTrusted(chain, authType);
-                            if (!verifyHostname(hostname, chain[0])) {
-                                Log.e(TAG, "BC hostname verification failed for " + hostname);
-                                throw new TlsFatalAlert(AlertDescription.bad_certificate);
-                            }
+                            // Android 2.1's TrustManagerImpl uses Harmony crypto which
+                            // doesn't support ECDSA signatures (NoSuchAlgorithmException for
+                            // OID 1.2.840.10045.4.3.x). Use spongycastle's PKIX validator
+                            // directly so all signature algorithms are handled correctly.
+                            validateChainWithSpongyCastle(chain, hostname);
                             Log.d(TAG, "BC server certificate validated against CA bundle");
                         } catch (TlsFatalAlert e) {
                             throw e;
@@ -814,6 +817,83 @@ public class BouncyCastleHttpClient {
         };
     }
 
+    /**
+     * Validate a server certificate chain using spongycastle's PKIX engine.
+     * Android 2.1's built-in TrustManagerImpl (Harmony) cannot verify ECDSA
+     * certificate signatures (NoSuchAlgorithmException for ecdsa-with-SHA384).
+     * We load the CA bundle and re-parse the server chain entirely through
+     * spongycastle so all crypto (including sig verification) uses BC.
+     */
+    private static void validateChainWithSpongyCastle(
+            X509Certificate[] chain, String hostname)
+            throws java.io.IOException {
+        try {
+            java.security.Provider bcProv = getBcProvider();
+            if (bcProv == null) {
+                throw new TlsFatalAlert(AlertDescription.internal_error);
+            }
+            CertificateFactory bcCf = CertificateFactory.getInstance("X.509", bcProv);
+
+            // Re-parse server chain through BC so sig verification uses BC crypto
+            java.util.List bcChain = new java.util.ArrayList();
+            for (int i = 0; i < chain.length; i++) {
+                ByteArrayInputStream bais = new ByteArrayInputStream(chain[i].getEncoded());
+                bcChain.add((X509Certificate) bcCf.generateCertificate(bais));
+            }
+
+            // Load CA bundle through BC
+            byte[] caBytes = getBcCaBundleBytes();
+            if (caBytes == null || caBytes.length == 0) {
+                throw new TlsFatalAlert(AlertDescription.bad_certificate);
+            }
+            Collection caCerts = bcCf.generateCertificates(new ByteArrayInputStream(caBytes));
+            java.util.Set anchors = new java.util.HashSet();
+            java.util.Iterator it = caCerts.iterator();
+            while (it.hasNext()) {
+                anchors.add(new java.security.cert.TrustAnchor(
+                        (X509Certificate) it.next(), null));
+            }
+
+            java.security.cert.CertPath cp = bcCf.generateCertPath(bcChain);
+            java.security.cert.PKIXParameters params =
+                    new java.security.cert.PKIXParameters(anchors);
+            params.setRevocationEnabled(false);
+            java.security.cert.CertPathValidator cpv =
+                    java.security.cert.CertPathValidator.getInstance("PKIX", bcProv);
+            cpv.validate(cp, params);
+        } catch (TlsFatalAlert e) {
+            throw e;
+        } catch (Throwable t) {
+            Log.e(TAG, "BC PKIX chain validation failed: " + t);
+            throw new TlsFatalAlert(AlertDescription.bad_certificate);
+        }
+        if (!verifyHostname(hostname, chain[0])) {
+            Log.e(TAG, "BC hostname verification failed for " + hostname);
+            throw new TlsFatalAlert(AlertDescription.bad_certificate);
+        }
+    }
+
+    /** Raw bytes of ca_bundle.pem, populated when the bundle is first loaded. */
+    private static byte[] bcCaBundleBytes = null;
+
+    private static synchronized byte[] getBcCaBundleBytes() {
+        return bcCaBundleBytes;
+    }
+
+    private static java.security.Provider bcProviderInstance = null;
+    private static synchronized java.security.Provider getBcProvider() {
+        if (bcProviderInstance == null) {
+            try {
+                bcProviderInstance = (java.security.Provider)
+                        Class.forName("org.spongycastle.jce.provider.BouncyCastleProvider")
+                             .newInstance();
+            } catch (Throwable t) {
+                Log.e(TAG, "Could not instantiate BouncyCastleProvider", t);
+            }
+        }
+        return bcProviderInstance;
+    }
+
     private static synchronized X509TrustManager getTrustManager(Context context) {
         if (trustManager != null) {
             return trustManager;
@@ -825,6 +905,18 @@ public class BouncyCastleHttpClient {
         InputStream is = null;
         try {
             is = context.getResources().openRawResource(R.raw.ca_bundle);
+            // Cache raw bytes for spongycastle PKIX validator (which needs to re-parse
+            // the bundle through BC's own CertificateFactory to support ECDSA)
+            if (bcCaBundleBytes == null) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+                bcCaBundleBytes = baos.toByteArray();
+                Log.d(TAG, "BC CA bundle cached: " + bcCaBundleBytes.length + " bytes");
+                is.close();
+                is = new ByteArrayInputStream(bcCaBundleBytes);
+            }
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             Collection certs = cf.generateCertificates(is);
             if (certs == null || certs.size() == 0) {

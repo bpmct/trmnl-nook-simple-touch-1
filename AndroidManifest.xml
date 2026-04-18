@@ -46,6 +46,16 @@
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:label="Gift Mode Settings"
             android:theme="@style/FullscreenTheme" />
+        <activity
+            android:name=".ShowcaseSettingsActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:label="Showcase Settings"
+            android:theme="@style/FullscreenTheme" />
+        <activity
+            android:name=".ShowcaseActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:label="Showcase"
+            android:theme="@style/FullscreenTheme" />
     </application>
 
 </manifest>

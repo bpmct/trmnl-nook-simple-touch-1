@@ -64,6 +64,7 @@ public class RotateLayout extends ViewGroup {
             return;
         }
 
+        int save = canvas.save();
         if (angle == 90) {
             canvas.translate(getWidth(), 0);
             canvas.rotate(90);
@@ -76,6 +77,7 @@ public class RotateLayout extends ViewGroup {
         }
 
         super.dispatchDraw(canvas);
+        canvas.restoreToCount(save);
     }
 
     public boolean dispatchTouchEvent(MotionEvent event) {

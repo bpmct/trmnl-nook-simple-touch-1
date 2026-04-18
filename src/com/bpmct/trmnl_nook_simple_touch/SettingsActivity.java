@@ -228,7 +228,7 @@ public class SettingsActivity extends Activity {
             public void onClick(View v) {
                 new AlertDialog.Builder(SettingsActivity.this)
                     .setTitle("Opening Wi-Fi Settings")
-                    .setMessage("After connecting, press the Home button on your NOOK to return to this app.")
+                    .setMessage("After connecting, press the Home button on the bottom of this device to return to this app.")
                     .setPositiveButton("Open Wi-Fi Settings", new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface dialog, int which) {
                             Intent wifiIntent = new Intent();

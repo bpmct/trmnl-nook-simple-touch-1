@@ -1,6 +1,8 @@
 package com.bpmct.trmnl_nook_simple_touch;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -1499,13 +1501,22 @@ public class DisplayActivity extends Activity {
         wifiBtn.setOnTouchListener(new View.OnTouchListener() {
             public boolean onTouch(View v, MotionEvent event) {
                 if (event.getAction() == MotionEvent.ACTION_UP) {
-                    Intent wifiIntent = new Intent();
-                    wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
-                    try {
-                        startActivity(wifiIntent);
-                    } catch (Throwable t2) {
-                        try { startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)); } catch (Throwable t3) {}
-                    }
+                    new AlertDialog.Builder(DisplayActivity.this)
+                        .setTitle("Opening Wi-Fi Settings")
+                        .setMessage("After connecting, press the Home button on the bottom of this device to return to this app.")
+                        .setPositiveButton("Open Wi-Fi Settings", new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int which) {
+                                Intent wifiIntent = new Intent();
+                                wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
+                                try {
+                                    startActivity(wifiIntent);
+                                } catch (Throwable t2) {
+                                    try { startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)); } catch (Throwable t3) {}
+                                }
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
                 }
                 return true;
             }

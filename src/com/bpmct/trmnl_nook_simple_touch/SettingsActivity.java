@@ -1,6 +1,8 @@
 package com.bpmct.trmnl_nook_simple_touch;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
@@ -224,13 +226,22 @@ public class SettingsActivity extends Activity {
         Button wifiSettingsButton = createGreyButton("WiFi Settings");
         wifiSettingsButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                Intent wifiIntent = new Intent();
-                wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
-                try {
-                    startActivity(wifiIntent);
-                } catch (Throwable t) {
-                    startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
-                }
+                new AlertDialog.Builder(SettingsActivity.this)
+                    .setTitle("Opening Wi-Fi Settings")
+                    .setMessage("After connecting, press the Home button on the bottom of this device to return to this app.")
+                    .setPositiveButton("Open Wi-Fi Settings", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            Intent wifiIntent = new Intent();
+                            wifiIntent.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
+                            try {
+                                startActivity(wifiIntent);
+                            } catch (Throwable t) {
+                                startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+                            }
+                        }
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
             }
         });
         LinearLayout.LayoutParams wifiSettBtnParams = new LinearLayout.LayoutParams(

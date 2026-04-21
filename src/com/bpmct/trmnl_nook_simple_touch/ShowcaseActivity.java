@@ -1,6 +1,8 @@
 package com.bpmct.trmnl_nook_simple_touch;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -371,7 +373,7 @@ public class ShowcaseActivity extends Activity {
     private static final long WIFI_WARMUP_MS = 15 * 1000;
     private final android.os.Handler handler = new android.os.Handler();
 
-    private static final long CELL_FETCH_STAGGER_MS = 1500;
+    private static final long CELL_FETCH_STAGGER_MS = 8000;
 
     private void startFetchAll() {
         if (isConnected()) {
@@ -469,13 +471,22 @@ public class ShowcaseActivity extends Activity {
         wifiBtn.setOnTouchListener(new View.OnTouchListener() {
             public boolean onTouch(View v, android.view.MotionEvent event) {
                 if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
-                    try {
-                        Intent wi = new Intent();
-                        wi.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
-                        try { startActivity(wi); } catch (Throwable t2) {
-                            startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
-                        }
-                    } catch (Throwable t) {}
+                    new AlertDialog.Builder(ShowcaseActivity.this)
+                        .setTitle("Opening Wi-Fi Settings")
+                        .setMessage("After connecting, press the Home button on the bottom of this device to return to this app.")
+                        .setPositiveButton("Open Wi-Fi Settings", new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int which) {
+                                try {
+                                    Intent wi = new Intent();
+                                    wi.setClassName("com.android.settings", "com.android.settings.wifi.Settings_Wifi_Settings");
+                                    try { startActivity(wi); } catch (Throwable t2) {
+                                        startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+                                    }
+                                } catch (Throwable t) {}
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
                 }
                 return true;
             }
@@ -510,7 +521,14 @@ public class ShowcaseActivity extends Activity {
                 handler.post(new Runnable() {
                     public void run() {
                         hideNoWifiScreen();
-                        for (int i = 0; i < NUM_CELLS; i++) fetchCell(i);
+                        for (int i = 0; i < NUM_CELLS; i++) {
+                            final int cellIdx = i;
+                            handler.postDelayed(new Runnable() {
+                                public void run() {
+                                    if (isCellConfigured(ShowcaseActivity.this, cellIdx)) fetchCell(cellIdx);
+                                }
+                            }, cellIdx * CELL_FETCH_STAGGER_MS);
+                        }
                     }
                 });
             }
